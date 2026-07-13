@@ -64,12 +64,16 @@ func hostMetricsDisabled(cluster *computev1.PolarsCluster) bool {
 	return hm != nil && !hm.Enabled
 }
 
-// distTag returns the composed runtime's dist tag, or "" when no runtime is configured.
+// distTag returns the composed runtime's dist tag, falling back to
+// spec.version, or "" when no runtime is configured.
 func distTag(cluster *computev1.PolarsCluster) string {
 	if cluster.Spec.Runtime == nil {
 		return ""
 	}
-	return cluster.Spec.Runtime.Composed.Dist.Tag
+	if tag := cluster.Spec.Runtime.Composed.Dist.Tag; tag != "" {
+		return tag
+	}
+	return cluster.Spec.Version
 }
 
 // standardLabels returns the app.kubernetes.io labels set on every managed object.
@@ -133,7 +137,7 @@ func composedRuntimeConfig(cluster *computev1.PolarsCluster) (initContainers []c
 
 	initContainers = []corev1.Container{{
 		Name:            "release",
-		Image:           fmt.Sprintf("%s:%s", distRepository, composed.Dist.Tag),
+		Image:           fmt.Sprintf("%s:%s", distRepository, distTag(cluster)),
 		ImagePullPolicy: distPullPolicy,
 		Command:         []string{"/bin/cp"},
 		Args:            []string{"-a", "/opt/.", releaseDataMountPath},

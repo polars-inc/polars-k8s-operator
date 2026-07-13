@@ -7,6 +7,9 @@ metadata:
   name: polarscluster-sample
 spec:
   acceptEula: true
+  # Version of Polars on-premises to run. Used as the dist image tag unless
+  # runtime.composed.dist.tag overrides it.
+  version: "latest"
   license:
     onPremEnterprise:
       # Create this Secret from your Polars on-premises enterprise license:
@@ -16,7 +19,8 @@ spec:
   runtime:
     composed:
       dist:
-        tag: "0.6.3"
+        repository: polars-on-premises
+        pullPolicy: IfNotPresent
   schedulerSpec: {}
   workerPool:
     minReplicas: 1

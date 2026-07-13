@@ -842,6 +842,7 @@ func realImagePolarsClusterManifest(ns, name string) string {
 	cluster := newPolarsCluster(ns, name)
 	cluster.Spec = computev1.PolarsClusterSpec{
 		AcceptEula: true,
+		Version:    realImageTag,
 		License: computev1.LicenseSpec{
 			OnPremEnterprise: &computev1.LicenseOnPremEnterpriseSpec{
 				SecretName:     realImageLicenseSecret,
@@ -852,7 +853,6 @@ func realImagePolarsClusterManifest(ns, name string) string {
 			Composed: computev1.ComposedRuntimeSpec{
 				Dist: computev1.ImageSpec{
 					Repository: realImageRepository,
-					Tag:        realImageTag,
 					PullPolicy: corev1.PullNever,
 				},
 			},

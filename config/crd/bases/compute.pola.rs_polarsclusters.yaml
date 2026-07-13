@@ -1673,9 +1673,8 @@ spec:
                     properties:
                       dist:
                         description: |-
-                          Dist is the Polars distribution image. Tag is required and pins the
-                          Polars on-premises version. Repository defaults to
-                          "polarscloud/polars-on-premises".
+                          Dist is the Polars distribution image. Repository defaults to
+                          "polarscloud/polars-on-premises" and tag defaults to spec.version.
                         properties:
                           pullPolicy:
                             description: PullPolicy describes a policy for if/when
@@ -1710,12 +1709,8 @@ spec:
                           tag:
                             type: string
                         type: object
-                    required:
-                    - dist
                     type: object
                     x-kubernetes-validations:
-                    - message: dist.tag (the Polars distribution version) is required
-                      rule: has(self.dist.tag) && size(self.dist.tag) > 0
                     - message: polarsExtras must include cloudpickle
                       rule: '!has(self.polarsExtras) || size(self.polarsExtras) ==
                         0 || self.polarsExtras.contains(''cloudpickle'')'
@@ -10452,6 +10447,12 @@ spec:
                 required:
                 - otlpEndpoint
                 type: object
+              version:
+                description: |-
+                  Version is the Polars on-premises release to run. It is used as the
+                  composed runtime's dist tag unless runtime.composed.dist.tag overrides
+                  it.
+                type: string
               workerPool:
                 description: WorkerPoolDeclaration defines the desired state of a
                   PolarsCluster's worker pool.
@@ -19573,6 +19574,11 @@ spec:
             - message: acceptEula must be true when using the On-Prem Enterprise license
               rule: '!has(self.license.onPremEnterprise) || (has(self.acceptEula)
                 && self.acceptEula)'
+            - message: version is required when runtime is configured (unless runtime.composed.dist.tag
+                is set)
+              rule: '!has(self.runtime) || (has(self.version) && size(self.version)
+                > 0) || (has(self.runtime.composed.dist) && has(self.runtime.composed.dist.tag)
+                && size(self.runtime.composed.dist.tag) > 0)'
           status:
             description: status defines the observed state of PolarsCluster
             properties:

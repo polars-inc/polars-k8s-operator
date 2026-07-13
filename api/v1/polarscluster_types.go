@@ -12,6 +12,7 @@ import (
 
 // PolarsClusterSpec defines the desired state of PolarsCluster
 // +kubebuilder:validation:XValidation:rule="!has(self.license.onPremEnterprise) || (has(self.acceptEula) && self.acceptEula)",message="acceptEula must be true when using the On-Prem Enterprise license"
+// +kubebuilder:validation:XValidation:rule="!has(self.runtime) || (has(self.version) && size(self.version) > 0) || (has(self.runtime.composed.dist) && has(self.runtime.composed.dist.tag) && size(self.runtime.composed.dist.tag) > 0)",message="version is required when runtime is configured (unless runtime.composed.dist.tag is set)"
 type PolarsClusterSpec struct {
 	Telemetry *TelemetrySpec `json:"telemetry,omitempty"`
 	// +kubebuilder:default=info
@@ -36,6 +37,12 @@ type PolarsClusterSpec struct {
 	// +kubebuilder:default=false
 	// +optional
 	AcceptEula bool `json:"acceptEula,omitempty"`
+
+	// Version is the Polars on-premises release to run. It is used as the
+	// composed runtime's dist tag unless runtime.composed.dist.tag overrides
+	// it.
+	// +optional
+	Version string `json:"version,omitempty"`
 
 	// Runtime composes the scheduler/worker containers from the Polars
 	// distribution and a Python base image. When nil, the pod templates must
@@ -164,13 +171,12 @@ type RuntimeSpec struct {
 // ComposedRuntimeSpec composes the runtime from the Polars distribution image
 // (copied into an emptyDir by an init container) executed on a Python base
 // image.
-// +kubebuilder:validation:XValidation:rule="has(self.dist.tag) && size(self.dist.tag) > 0",message="dist.tag (the Polars distribution version) is required"
 // +kubebuilder:validation:XValidation:rule="!has(self.polarsExtras) || size(self.polarsExtras) == 0 || self.polarsExtras.contains('cloudpickle')",message="polarsExtras must include cloudpickle"
 type ComposedRuntimeSpec struct {
-	// Dist is the Polars distribution image. Tag is required and pins the
-	// Polars on-premises version. Repository defaults to
-	// "polarscloud/polars-on-premises".
-	Dist ImageSpec `json:"dist"`
+	// Dist is the Polars distribution image. Repository defaults to
+	// "polarscloud/polars-on-premises" and tag defaults to spec.version.
+	// +optional
+	Dist ImageSpec `json:"dist,omitempty"`
 
 	// Runtime is the Python base image the distribution runs on. Defaults to
 	// "python:3.13.9-slim-bookworm".

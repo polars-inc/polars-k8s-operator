@@ -272,6 +272,33 @@ func TestBuildSchedulerPodTemplate_ComposedRuntime(t *testing.T) {
 	g.Expect(result.Labels["app.kubernetes.io/version"]).To(Equal("0.6.3"))
 }
 
+func TestBuildSchedulerPodTemplate_ComposedRuntimeVersionFallback(t *testing.T) {
+	g := NewWithT(t)
+
+	cluster := &computev1.PolarsCluster{
+		ObjectMeta: metav1.ObjectMeta{Name: testClusterName, Namespace: testClusterNamespace},
+		Spec: computev1.PolarsClusterSpec{
+			Version: "0.7.0",
+			Runtime: &computev1.RuntimeSpec{Composed: computev1.ComposedRuntimeSpec{}},
+		},
+	}
+
+	result, err := BuildSchedulerPodTemplate(cluster)
+	g.Expect(err).NotTo(HaveOccurred())
+
+	g.Expect(result.Spec.InitContainers).To(HaveLen(1))
+	g.Expect(result.Spec.InitContainers[0].Image).To(Equal("polarscloud/polars-on-premises:0.7.0"))
+	g.Expect(result.Labels["app.kubernetes.io/version"]).To(Equal("0.7.0"))
+
+	cluster.Spec.Runtime.Composed.Dist.Tag = "0.6.3"
+	result, err = BuildSchedulerPodTemplate(cluster)
+	g.Expect(err).NotTo(HaveOccurred())
+
+	g.Expect(result.Spec.InitContainers[0].Image).To(Equal("polarscloud/polars-on-premises:0.6.3"),
+		"dist.tag should override spec.version")
+	g.Expect(result.Labels["app.kubernetes.io/version"]).To(Equal("0.6.3"))
+}
+
 func TestBuildSchedulerPodTemplate_ClusterIDAndEULA(t *testing.T) {
 	g := NewWithT(t)
 
