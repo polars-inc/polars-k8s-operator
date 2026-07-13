@@ -101,10 +101,10 @@ type ValueOrSource struct {
 // +kubebuilder:validation:ExactlyOneOf=onPrem;onPremEnterprise;licenseServer
 type LicenseSpec struct {
 	// +optional
-	OnPrem *LicenseOnPremSpec `json:"onPrem"`
+	OnPrem *LicenseOnPremSpec `json:"onPrem,omitempty"`
 
 	// +optional
-	OnPremEnterprise *LicenseOnPremEnterpriseSpec `json:"onPremEnterprise"`
+	OnPremEnterprise *LicenseOnPremEnterpriseSpec `json:"onPremEnterprise,omitempty"`
 
 	// LicenseServer connects to an offline Polars license server.
 	// +optional
@@ -221,13 +221,13 @@ type ObservatorySpec struct {
 // +kubebuilder:validation:ExactlyOneOf=s3;abs;gcs;sharedFilesystem
 type AnonymousResultsSpec struct {
 	// +optional
-	S3 *AnonymousResultsS3Spec `json:"s3"`
+	S3 *AnonymousResultsS3Spec `json:"s3,omitempty"`
 
 	// +optional
-	ABS *AnonymousResultsABSSpec `json:"abs"`
+	ABS *AnonymousResultsABSSpec `json:"abs,omitempty"`
 
 	// +optional
-	GCS *AnonymousResultsGCSSpec `json:"gcs"`
+	GCS *AnonymousResultsGCSSpec `json:"gcs,omitempty"`
 
 	// +optional
 	SharedFilesystem *SharedFilesystemSpec `json:"sharedFilesystem,omitempty"`
@@ -356,13 +356,13 @@ type ShuffleDataSpec struct {
 	SharedFilesystem *SharedFilesystemSpec `json:"sharedFilesystem,omitempty"`
 
 	// +optional
-	S3 *ShuffleDataS3Spec `json:"s3"`
+	S3 *ShuffleDataS3Spec `json:"s3,omitempty"`
 
 	// +optional
-	ABS *ShuffleDataABSSpec `json:"abs"`
+	ABS *ShuffleDataABSSpec `json:"abs,omitempty"`
 
 	// +optional
-	GCS *ShuffleDataGCSSpec `json:"gcs"`
+	GCS *ShuffleDataGCSSpec `json:"gcs,omitempty"`
 }
 
 // LocalFilesystemSpec configures per-pod local storage at the given path,

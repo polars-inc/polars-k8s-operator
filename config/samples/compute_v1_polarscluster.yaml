@@ -6,4 +6,19 @@ metadata:
     app.kubernetes.io/managed-by: kustomize
   name: polarscluster-sample
 spec:
-  # TODO(user): Add fields here
+  acceptEula: true
+  license:
+    onPremEnterprise:
+      # Create this Secret from your Polars on-premises enterprise license:
+      #   kubectl create secret generic license --from-file=license.json=<path to license>
+      secretName: license
+      secretProperty: license.json
+  runtime:
+    composed:
+      dist:
+        tag: "0.6.3"
+  schedulerSpec: {}
+  workerPool:
+    minReplicas: 1
+    maxReplicas: 3
+    replicas: 2

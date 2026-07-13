@@ -14,7 +14,12 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/utils/ptr"
+	"sigs.k8s.io/yaml"
 
+	computev1 "polars-inc/k8s-operator/api/v1"
 	"polars-inc/k8s-operator/test/utils"
 )
 
@@ -369,6 +374,22 @@ var _ = Describe("Manager", Ordered, func() {
 		itScalesTheWorkerPool(busyboxSpecConfig, "up", 3)
 		itScalesTheWorkerPool(busyboxSpecConfig, "down", 1)
 
+		// This keeps the checked-in sample manifest honest: the raw YAML a
+		// user would apply must stay valid against the CRD schema.
+		It("should accept the checked-in sample manifest", func() {
+			By("applying config/samples/compute_v1_polarscluster.yaml")
+			cmd := exec.Command("kubectl", "apply", "-n", clusterNamespace,
+				"-f", "config/samples/compute_v1_polarscluster.yaml")
+			_, err := utils.Run(cmd)
+			Expect(err).NotTo(HaveOccurred(), "The checked-in sample manifest should be accepted")
+
+			By("deleting the sample PolarsCluster")
+			cmd = exec.Command("kubectl", "delete", "-n", clusterNamespace,
+				"-f", "config/samples/compute_v1_polarscluster.yaml")
+			_, err = utils.Run(cmd)
+			Expect(err).NotTo(HaveOccurred())
+		})
+
 		It("should reject a WorkerPool whose replicas falls outside [minReplicas, maxReplicas]", func() {
 			By("attempting to create a PolarsCluster whose worker pool replicas is above maxReplicas")
 			err := kubectlApply(polarsClusterManifestWithPoolBounds(clusterNamespace, "e2e-cluster-invalid-replicas", 1, 2, 5))
@@ -716,142 +737,137 @@ const realImageRuntimeImage = "python:3.13.9-slim-bookworm"
 const realImageLicenseSecret = "e2e-real-image-license"
 const realImageLicenseSecretKey = "license.json"
 
-const clusterLicenseYAML = `
-  license:
-    onPrem:
-      clientID:
-        valueFrom:
-          fieldRef: { fieldPath: metadata.name }
-      clientSecret:
-        valueFrom:
-          fieldRef: { fieldPath: metadata.name }
-      workspaceID:
-        valueFrom:
-          fieldRef: { fieldPath: metadata.name }`
-
-const schedulerSpecYAML = `
-  schedulerSpec:
-    podTemplate:
-      spec:
-        containers:
-          - name: scheduler
-            image: busybox:latest
-            command: ["sleep", "3600"]
-            readinessProbe:
-              exec:
-                command: ["/bin/true"]
-            resources:
-              requests:
-                ephemeral-storage: 10Gi
-            securityContext:
-              allowPrivilegeEscalation: false
-              capabilities:
-                drop: ["ALL"]
-              runAsNonRoot: true
-              runAsUser: 1000
-              seccompProfile:
-                type: RuntimeDefault`
-
-const workerPoolPodTemplateYAML = `
-      spec:
-        containers:
-          - name: worker
-            image: busybox:latest
-            command: ["sleep", "3600"]
-            readinessProbe:
-              exec:
-                command: ["/bin/true"]
-            resources:
-              requests:
-                ephemeral-storage: 10Gi
-            securityContext:
-              allowPrivilegeEscalation: false
-              capabilities:
-                drop: ["ALL"]
-              runAsNonRoot: true
-              runAsUser: 1000
-              seccompProfile:
-                type: RuntimeDefault`
-
-const storageLocationsYAML = `
-  anonymousResults:
-    s3:
-      endpoint: "s3://polars-e2e-anonymous-results/results"
-  checkpointData:
-    s3:
-      endpoint: "s3://polars-e2e-checkpoint-data/checkpoints"`
-
 const anonymousResultsS3Endpoint = "s3://polars-e2e-anonymous-results/results"
 const checkpointDataS3Endpoint = "s3://polars-e2e-checkpoint-data/checkpoints"
 
+func mustMarshalManifest(cluster *computev1.PolarsCluster) string {
+	out, err := yaml.Marshal(cluster)
+	if err != nil {
+		panic(err)
+	}
+	return string(out)
+}
+
+func newPolarsCluster(ns, name string) *computev1.PolarsCluster {
+	return &computev1.PolarsCluster{
+		TypeMeta: metav1.TypeMeta{
+			APIVersion: computev1.GroupVersion.String(),
+			Kind:       "PolarsCluster",
+		},
+		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: ns},
+	}
+}
+
+func fieldRefValue(fieldPath string) computev1.ValueOrSource {
+	return computev1.ValueOrSource{
+		ValueFrom: &corev1.EnvVarSource{
+			FieldRef: &corev1.ObjectFieldSelector{FieldPath: fieldPath},
+		},
+	}
+}
+
+// busyboxPodTemplate is the stand-in template used for both the scheduler
+// and the worker pool: busybox sleeping forever with an always-succeeding
+// exec readiness probe.
+func busyboxPodTemplate(containerName string) corev1.PodTemplateSpec {
+	return corev1.PodTemplateSpec{
+		Spec: corev1.PodSpec{
+			Containers: []corev1.Container{{
+				Name:    containerName,
+				Image:   "busybox:latest",
+				Command: []string{"sleep", "3600"},
+				// Without a probe the operator injects the real TCP/gRPC
+				// readiness probes, which busybox can never pass.
+				ReadinessProbe: &corev1.Probe{
+					ProbeHandler: corev1.ProbeHandler{
+						Exec: &corev1.ExecAction{Command: []string{"/bin/true"}},
+					},
+				},
+			}},
+		},
+	}
+}
+
+func busyboxPolarsCluster(ns, name string, minReplicas, maxReplicas, replicas int32) *computev1.PolarsCluster {
+	cluster := newPolarsCluster(ns, name)
+	cluster.Spec = computev1.PolarsClusterSpec{
+		License: computev1.LicenseSpec{
+			OnPrem: &computev1.LicenseOnPremSpec{
+				ClientID:     fieldRefValue("metadata.name"),
+				ClientSecret: fieldRefValue("metadata.name"),
+				WorkspaceID:  fieldRefValue("metadata.name"),
+			},
+		},
+		SchedulerSpec: computev1.SchedulerSpec{
+			PodTemplate: ptr.To(busyboxPodTemplate("scheduler")),
+		},
+		WorkerPool: computev1.WorkerPoolDeclaration{
+			PodTemplate: busyboxPodTemplate("worker"),
+			MinReplicas: minReplicas,
+			MaxReplicas: ptr.To(maxReplicas),
+			Replicas:    replicas,
+		},
+	}
+	return cluster
+}
+
 func polarsClusterManifest(ns, name string, poolReplicas int) string {
-	return fmt.Sprintf(`
-apiVersion: compute.pola.rs/v1
-kind: PolarsCluster
-metadata:
-  name: %s
-  namespace: %s
-spec:
-%s
-%s
-%s
-  workerPool:
-    podTemplate:
-%s
-    minReplicas: %d
-    maxReplicas: %d
-    replicas: %d
-`, name, ns, clusterLicenseYAML, schedulerSpecYAML, storageLocationsYAML, workerPoolPodTemplateYAML, poolReplicas, poolReplicas, poolReplicas)
+	replicas := int32(poolReplicas)
+	cluster := busyboxPolarsCluster(ns, name, replicas, replicas, replicas)
+	cluster.Spec.AnonymousResults = &computev1.AnonymousResultsSpec{
+		S3: &computev1.AnonymousResultsS3Spec{Endpoint: anonymousResultsS3Endpoint},
+	}
+	cluster.Spec.CheckpointData = &computev1.CheckpointDataSpec{
+		S3: &computev1.CheckpointS3Spec{Endpoint: checkpointDataS3Endpoint},
+	}
+	return mustMarshalManifest(cluster)
 }
 
 func polarsClusterManifestWithPoolBounds(ns, name string, minReplicas, maxReplicas, replicas int) string {
-	return fmt.Sprintf(`
-apiVersion: compute.pola.rs/v1
-kind: PolarsCluster
-metadata:
-  name: %s
-  namespace: %s
-spec:
-%s
-%s
-  workerPool:
-    podTemplate:
-%s
-    minReplicas: %d
-    maxReplicas: %d
-    replicas: %d
-`, name, ns, clusterLicenseYAML, schedulerSpecYAML, workerPoolPodTemplateYAML, minReplicas, maxReplicas, replicas)
+	return mustMarshalManifest(busyboxPolarsCluster(ns, name, int32(minReplicas), int32(maxReplicas), int32(replicas)))
 }
 
 func realImagePolarsClusterManifest(ns, name string) string {
-	return fmt.Sprintf(`
-apiVersion: compute.pola.rs/v1
-kind: PolarsCluster
-metadata:
-  name: %s
-  namespace: %s
-spec:
-  acceptEula: true
-  license:
-    onPremEnterprise:
-      secretName: %s
-      secretProperty: %s
-  runtime:
-    composed:
-      dist:
-        repository: %s
-        tag: %q
-        pullPolicy: Never
-  schedulerSpec:
-    podTemplate:
-      spec:
-        containers:
-          - name: scheduler
-  workerPool:
-    minReplicas: 1
-    maxReplicas: 1
-    replicas: 1
-`, name, ns, realImageLicenseSecret, realImageLicenseSecretKey, realImageRepository, realImageTag)
+	// The podTemplates only name the containers (matching the ones the
+	// operator composes, so they merge): the scheduler stub gives the shared
+	// template-change spec's JSON patch an existing path to add env vars
+	// under, and everything else — images, commands, and the real TCP/gRPC
+	// readiness probes — comes from the composed runtime.
+	namedContainerTemplate := func(containerName string) corev1.PodTemplateSpec {
+		return corev1.PodTemplateSpec{
+			Spec: corev1.PodSpec{Containers: []corev1.Container{{Name: containerName}}},
+		}
+	}
+
+	cluster := newPolarsCluster(ns, name)
+	cluster.Spec = computev1.PolarsClusterSpec{
+		AcceptEula: true,
+		License: computev1.LicenseSpec{
+			OnPremEnterprise: &computev1.LicenseOnPremEnterpriseSpec{
+				SecretName:     realImageLicenseSecret,
+				SecretProperty: realImageLicenseSecretKey,
+			},
+		},
+		Runtime: &computev1.RuntimeSpec{
+			Composed: computev1.ComposedRuntimeSpec{
+				Dist: computev1.ImageSpec{
+					Repository: realImageRepository,
+					Tag:        realImageTag,
+					PullPolicy: corev1.PullNever,
+				},
+			},
+		},
+		SchedulerSpec: computev1.SchedulerSpec{
+			PodTemplate: ptr.To(namedContainerTemplate("scheduler")),
+		},
+		WorkerPool: computev1.WorkerPoolDeclaration{
+			PodTemplate: namedContainerTemplate("worker"),
+			MinReplicas: 1,
+			MaxReplicas: ptr.To(int32(1)),
+			Replicas:    1,
+		},
+	}
+	return mustMarshalManifest(cluster)
 }
 
 func realImageLicenseFile() string {
