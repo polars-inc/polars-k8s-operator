@@ -482,6 +482,7 @@ type PolarsClusterStatus struct {
 
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
+// +kubebuilder:subresource:scale:specpath=.spec.workerPool.replicas,statuspath=.status.workerPool.replicas,selectorpath=.status.workerPool.selector
 
 // PolarsCluster is the Schema for the polarsclusters API
 type PolarsCluster struct {

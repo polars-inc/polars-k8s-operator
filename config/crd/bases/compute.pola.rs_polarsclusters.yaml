@@ -19680,4 +19680,8 @@ spec:
     served: true
     storage: true
     subresources:
+      scale:
+        labelSelectorPath: .status.workerPool.selector
+        specReplicasPath: .spec.workerPool.replicas
+        statusReplicasPath: .status.workerPool.replicas
       status: {}

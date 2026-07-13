@@ -373,6 +373,7 @@ var _ = Describe("Manager", Ordered, func() {
 		itReplacesWorkersMarkedForDeletion(busyboxSpecConfig, 2)
 		itScalesTheWorkerPool(busyboxSpecConfig, "up", 3)
 		itScalesTheWorkerPool(busyboxSpecConfig, "down", 1)
+		itScalesViaScaleSubresource(busyboxSpecConfig)
 
 		// This keeps the checked-in sample manifest honest: the raw YAML a
 		// user would apply must stay valid against the CRD schema.
@@ -477,6 +478,7 @@ var _ = Describe("Manager", Ordered, func() {
 			itScalesTheWorkerPool(realImageSpecConfig, "up", 2)
 			itReplacesWorkersMarkedForDeletion(realImageSpecConfig, 2)
 			itScalesTheWorkerPool(realImageSpecConfig, "down", 1)
+			itScalesViaScaleSubresource(realImageSpecConfig)
 			itRecreatesSchedulerOnTemplateChange(realImageSpecConfig)
 		})
 	})
@@ -593,10 +595,10 @@ func itSetsOverallReadyCondition(cfg sharedSpecConfig) {
 
 func itScalesTheWorkerPool(cfg sharedSpecConfig, direction string, to int) {
 	It(fmt.Sprintf("should scale the WorkerPool %s to %d ready worker(s)", direction, to), func() {
-		By(fmt.Sprintf("patching PolarsCluster.spec.workerPool to set minReplicas/maxReplicas/replicas to %d", to))
+		By(fmt.Sprintf("patching PolarsCluster.spec.workerPool.replicas to %d", to))
 		cmd := exec.Command("kubectl", "patch", "polarscluster", cfg.clusterName, "-n", cfg.namespace,
 			"--type=merge",
-			"-p", fmt.Sprintf(`{"spec":{"workerPool":{"minReplicas":%d,"maxReplicas":%d,"replicas":%d}}}`, to, to, to))
+			"-p", fmt.Sprintf(`{"spec":{"workerPool":{"replicas":%d}}}`, to))
 		_, err := utils.Run(cmd)
 		Expect(err).NotTo(HaveOccurred())
 
@@ -680,6 +682,46 @@ func itReplacesWorkersMarkedForDeletion(cfg sharedSpecConfig, poolSize int) {
 			g.Expect(err).NotTo(HaveOccurred())
 			g.Expect(output).To(BeEmpty())
 		}).Should(Succeed())
+	})
+}
+
+func itScalesViaScaleSubresource(cfg sharedSpecConfig) {
+	It("should scale the WorkerPool through the scale subresource", func() {
+		By("scaling up to 2 replicas with kubectl scale")
+		cmd := exec.Command("kubectl", "scale", "polarscluster", cfg.clusterName, "-n", cfg.namespace,
+			"--replicas=2")
+		_, err := utils.Run(cmd)
+		Expect(err).NotTo(HaveOccurred())
+
+		By("verifying PolarsCluster.status.workerPool reflects 2 ready replicas")
+		Eventually(func(g Gomega) {
+			cmd := exec.Command("kubectl", "get", "polarscluster", cfg.clusterName, "-n", cfg.namespace,
+				"-o", "jsonpath={.status.workerPool.replicas} {.status.workerPool.readyReplicas}")
+			output, err := utils.Run(cmd)
+			g.Expect(err).NotTo(HaveOccurred())
+			g.Expect(output).To(Equal("2 2"))
+		}, cfg.readyTimeout, cfg.pollInterval).Should(Succeed())
+
+		By("verifying a scale beyond maxReplicas errors, rejected by the schema's bounds rule")
+		cmd = exec.Command("kubectl", "scale", "polarscluster", cfg.clusterName, "-n", cfg.namespace,
+			"--replicas=5")
+		_, err = utils.Run(cmd)
+		Expect(err).To(HaveOccurred())
+		Expect(err.Error()).To(ContainSubstring("replicas must be within"))
+
+		By("scaling back down to 1 replica with kubectl scale")
+		cmd = exec.Command("kubectl", "scale", "polarscluster", cfg.clusterName, "-n", cfg.namespace,
+			"--replicas=1")
+		_, err = utils.Run(cmd)
+		Expect(err).NotTo(HaveOccurred())
+
+		Eventually(func(g Gomega) {
+			cmd := exec.Command("kubectl", "get", "polarscluster", cfg.clusterName, "-n", cfg.namespace,
+				"-o", "jsonpath={.status.workerPool.replicas} {.status.workerPool.readyReplicas}")
+			output, err := utils.Run(cmd)
+			g.Expect(err).NotTo(HaveOccurred())
+			g.Expect(output).To(Equal("1 1"))
+		}, cfg.readyTimeout, cfg.pollInterval).Should(Succeed())
 	})
 }
 
@@ -811,9 +853,11 @@ func busyboxPolarsCluster(ns, name string, minReplicas, maxReplicas, replicas in
 	return cluster
 }
 
+// polarsClusterManifest declares the pool bounds [1, 3] up front: they are
+// static policy the lifecycle specs never touch — scaling only ever moves
+// spec.workerPool.replicas within them.
 func polarsClusterManifest(ns, name string, poolReplicas int) string {
-	replicas := int32(poolReplicas)
-	cluster := busyboxPolarsCluster(ns, name, replicas, replicas, replicas)
+	cluster := busyboxPolarsCluster(ns, name, 1, 3, int32(poolReplicas))
 	cluster.Spec.AnonymousResults = &computev1.AnonymousResultsSpec{
 		S3: &computev1.AnonymousResultsS3Spec{Endpoint: anonymousResultsS3Endpoint},
 	}
@@ -863,7 +907,7 @@ func realImagePolarsClusterManifest(ns, name string) string {
 		WorkerPool: computev1.WorkerPoolDeclaration{
 			PodTemplate: namedContainerTemplate("worker"),
 			MinReplicas: 1,
-			MaxReplicas: ptr.To(int32(1)),
+			MaxReplicas: ptr.To(int32(3)),
 			Replicas:    1,
 		},
 	}
