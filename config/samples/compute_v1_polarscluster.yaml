@@ -4,7 +4,7 @@ metadata:
   labels:
     app.kubernetes.io/name: k8s-operator
     app.kubernetes.io/managed-by: kustomize
-  name: polarscluster-sample
+  name: polars
 spec:
   acceptEula: true
   # Version of Polars on-premises to run. Used as the dist image tag unless

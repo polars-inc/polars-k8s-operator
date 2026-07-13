@@ -48,7 +48,7 @@ func BuildWorkerPodTemplate(cluster *computev1.PolarsCluster) (corev1.Pod, error
 	applyPodLabels(&pod, cluster, componentWorker)
 	pod.Namespace = cluster.Namespace
 	pod.Name = ""
-	pod.GenerateName = fmt.Sprintf("%s-", cluster.Name)
+	pod.GenerateName = fmt.Sprintf("%s-worker-", cluster.Name)
 
 	return pod, nil
 }
@@ -73,11 +73,9 @@ func computedWorkerPodSpec(cluster *computev1.PolarsCluster, containerName strin
 	}
 	worker.Bool("enabled", true)
 	cublet.String("cluster_id", resolveClusterID(cluster))
-	cublet.FieldRef("instance_id", fieldPathMetadataUID)
-	// the chart hardcodes a static "<fullname>-worker-0" here since a
-	// Deployment pod has no stable per-replica identity to reference; this
-	// pod's own UID is a real, stable identity, so use that instead.
-	staticLeader.FieldRef("leader_instance_id", fieldPathMetadataUID)
+	cublet.FieldRef("instance_id", fieldPathMetadataName)
+	// A worker will never be a leader, so hardcode this to a no-op value.
+	staticLeader.String("leader_instance_id", "not-me")
 	staticLeader.String("scheduler_service__public_addr__hostname", internalHostname)
 	staticLeader.String("scheduler_service__public_addr__port", "5050")
 	staticLeader.String("observatory_service__public_addr__hostname", internalHostname)

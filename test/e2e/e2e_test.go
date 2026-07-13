@@ -522,11 +522,12 @@ func itReconcilesWorkerPool(cfg sharedSpecConfig, manifest string, replicas int)
 			g.Expect(selector).NotTo(BeEmpty())
 		}).Should(Succeed())
 
-		By(fmt.Sprintf("verifying %d pod(s) exist matching status.selector", replicas))
+		By(fmt.Sprintf("verifying %d pod(s) named <cluster>-worker-* exist matching status.selector", replicas))
 		Eventually(func(g Gomega) {
 			names, err := podNamesForSelector(cfg.namespace, selector)
 			g.Expect(err).NotTo(HaveOccurred())
 			g.Expect(names).To(HaveLen(replicas))
+			g.Expect(names).To(HaveEach(HavePrefix(cfg.clusterName + "-worker-")))
 		}).Should(Succeed())
 
 		By("verifying a worker pod was built from the expected image, owned by the PolarsCluster")

@@ -310,7 +310,7 @@ type ServiceConfig struct {
 }
 
 // WorkerPoolDeclaration defines the desired state of a PolarsCluster's worker pool.
-// +kubebuilder:validation:XValidation:rule="self.replicas >= self.minReplicas && (!has(self.maxReplicas) || self.replicas <= self.maxReplicas)",message="replicas must be within [minReplicas, maxReplicas]"
+// +kubebuilder:validation:XValidation:rule="self.replicas >= self.minReplicas && (!has(self.maxReplicas) || self.replicas <= self.maxReplicas)",message="replicas must be within [minReplicas, maxReplicas]",messageExpression="'replicas must be within [%d, %d], got %d'.format([self.minReplicas, self.maxReplicas, self.replicas])"
 type WorkerPoolDeclaration struct {
 	// +optional
 	PodTemplate v1.PodTemplateSpec `json:"podTemplate,omitempty"`

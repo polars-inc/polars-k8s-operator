@@ -17,8 +17,8 @@ const (
 	observatoryDataVolumeName = "observatory-data"
 	observatoryDataMountPath  = "/app/observatory_data"
 
-	// fieldPathMetadataUID is shared with worker_pod.go's downward-API env vars.
-	fieldPathMetadataUID = "metadata.uid"
+	// fieldPathMetadataName is shared with worker_pod.go's downward-API env vars.
+	fieldPathMetadataName = "metadata.name"
 )
 
 // BuildSchedulerPodTemplate builds the scheduler pod: computed env/volumes/
@@ -71,15 +71,13 @@ func computedSchedulerPodSpec(cluster *computev1.PolarsCluster, containerName st
 
 	scheduler.Bool("enabled", true)
 	cublet.String("cluster_id", resolveClusterID(cluster))
-	// the chart hardcodes a static "<fullname>-0" here since a Deployment
-	// pod has no stable per-replica identity to reference; this pod's own
-	// UID is a real, stable identity, so use that instead.
-	staticLeader.FieldRef("leader_instance_id", fieldPathMetadataUID)
+	cublet.FieldRef("instance_id", fieldPathMetadataName)
+	// A scheduler will always be a leader, so hardcode this to equal instance_id
+	staticLeader.FieldRef("leader_instance_id", fieldPathMetadataName)
 	staticLeader.String("scheduler_service__public_addr__ip", "127.0.0.1")
 	staticLeader.String("scheduler_service__public_addr__port", "5050")
 	staticLeader.String("observatory_service__public_addr__ip", "127.0.0.1")
 	staticLeader.String("observatory_service__public_addr__port", "5049")
-	cublet.FieldRef("instance_id", fieldPathMetadataUID)
 
 	observatory.Bool("enabled", true)
 	observatory.Int("max_metrics_bytes_total", observatoryMaxMetricsBytes(cluster))

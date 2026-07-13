@@ -19563,6 +19563,8 @@ spec:
                 type: object
                 x-kubernetes-validations:
                 - message: replicas must be within [minReplicas, maxReplicas]
+                  messageExpression: '''replicas must be within [%d, %d], got %d''.format([self.minReplicas,
+                    self.maxReplicas, self.replicas])'
                   rule: self.replicas >= self.minReplicas && (!has(self.maxReplicas)
                     || self.replicas <= self.maxReplicas)
             required:

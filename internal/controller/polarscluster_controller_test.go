@@ -171,3 +171,33 @@ var _ = Describe("PolarsCluster Controller", func() {
 		})
 	})
 })
+
+var _ = Describe("PolarsCluster validation", func() {
+	It("should reject out-of-bounds replicas naming the actual bounds", func() {
+		cluster := &computev1.PolarsCluster{
+			ObjectMeta: metav1.ObjectMeta{Name: "validation-replica-bounds", Namespace: "default"},
+			Spec: computev1.PolarsClusterSpec{
+				License: computev1.LicenseSpec{
+					LicenseServer: &computev1.LicenseServerSpec{URI: "https://license-server:50051"},
+				},
+				SchedulerSpec: computev1.SchedulerSpec{
+					PodTemplate: &corev1.PodTemplateSpec{
+						Spec: corev1.PodSpec{Containers: []corev1.Container{{Name: "scheduler", Image: "busybox"}}},
+					},
+				},
+				WorkerPool: computev1.WorkerPoolDeclaration{
+					PodTemplate: corev1.PodTemplateSpec{
+						Spec: corev1.PodSpec{Containers: []corev1.Container{{Name: "worker", Image: "busybox"}}},
+					},
+					MinReplicas: 1,
+					MaxReplicas: new(int32(3)),
+					Replicas:    5,
+				},
+			},
+		}
+
+		err := k8sClient.Create(context.Background(), cluster)
+		Expect(err).To(HaveOccurred())
+		Expect(err.Error()).To(ContainSubstring("replicas must be within [1, 3], got 5"))
+	})
+})

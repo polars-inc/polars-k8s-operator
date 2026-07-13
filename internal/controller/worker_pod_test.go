@@ -28,6 +28,17 @@ func polarsCluster(extra corev1.Container) *computev1.PolarsCluster {
 	}
 }
 
+func TestBuildWorkerPodTemplate_PodNaming(t *testing.T) {
+	g := NewWithT(t)
+
+	result, err := BuildWorkerPodTemplate(polarsCluster(corev1.Container{}))
+	g.Expect(err).NotTo(HaveOccurred())
+
+	g.Expect(result.Name).To(BeEmpty())
+	g.Expect(result.GenerateName).To(Equal(testClusterName + "-worker-"))
+	g.Expect(result.Namespace).To(Equal(testClusterNamespace))
+}
+
 func TestBuildWorkerPodTemplate_DefaultShuffleData(t *testing.T) {
 	g := NewWithT(t)
 
