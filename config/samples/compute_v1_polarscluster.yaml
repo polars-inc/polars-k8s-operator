@@ -1,0 +1,9 @@
+apiVersion: compute.pola.rs/v1
+kind: PolarsCluster
+metadata:
+  labels:
+    app.kubernetes.io/name: polars-k8s-operator
+    app.kubernetes.io/managed-by: kustomize
+  name: polarscluster-sample
+spec:
+  # TODO(user): Add fields here

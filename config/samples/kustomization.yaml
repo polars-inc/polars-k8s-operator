@@ -1,0 +1,4 @@
+## Append samples of your project ##
+resources:
+- compute_v1_polarscluster.yaml
+# +kubebuilder:scaffold:manifestskustomizesamples
