@@ -1,0 +1,216 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      dry-run-version:
+        description: 'Version to use for a dry run'
+        default: '0.1.0'
+      dry-run:
+        description: 'Dry run: build image without pushing, skip the GitHub release, print chart diff instead of opening a PR'
+        type: boolean
+        default: false
+
+permissions: {}
+
+jobs:
+  version:
+    name: Resolve version
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      prerelease: ${{ steps.version.outputs.prerelease }}
+    steps:
+      - name: Resolve and validate version
+        id: version
+        env:
+          DRY_RUN: ${{ inputs.dry-run }}
+          DRY_RUN_VERSION: ${{ inputs.dry-run-version }}
+        run: |
+          if [ "$DRY_RUN" = "true" ]; then
+            VERSION="${DRY_RUN_VERSION#v}"
+          else
+            VERSION="${GITHUB_REF_NAME#v}"
+          fi
+          echo "$VERSION" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$' || {
+            echo "Not a semver version: $VERSION" >&2
+            exit 1
+          }
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          case "$VERSION" in
+            *-*) echo "prerelease=true" >> "$GITHUB_OUTPUT" ;;
+            *) echo "prerelease=false" >> "$GITHUB_OUTPUT" ;;
+          esac
+
+  docker:
+    permissions:
+      contents: read
+    name: Push image to Docker Hub
+    runs-on: ubuntu-latest
+    needs: version
+    env:
+      PLATFORMS: linux/amd64,linux/arm64
+    steps:
+      - name: Clone the code
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@96fe6ef7f33517b61c61be40b68a1882f3264fb8 # v4.2.0
+
+      - name: Login to Docker Hub
+        if: ${{ inputs.dry-run != true }}
+        uses: docker/login-action@af1e73f918a031802d376d3c8bbc3fe56130a9b0 # v4.4.0
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Build and push image
+        if: ${{ inputs.dry-run != true }}
+        env:
+          VERSION: ${{ needs.version.outputs.version }}
+        run: make docker-buildx IMG="polarscloud/polars-k8s-operator:$VERSION"
+
+      - name: Build image (dry run, no push)
+        if: ${{ inputs.dry-run == true }}
+        env:
+          VERSION: ${{ needs.version.outputs.version }}
+        run: make docker-build IMG="polarscloud/polars-k8s-operator:$VERSION"
+
+  manifests:
+    permissions:
+      contents: write # create the GitHub release and upload install.yaml
+    name: Create GitHub release with install.yaml
+    runs-on: ubuntu-latest
+    needs: [version, docker]
+    steps:
+      - name: Clone the code
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      - name: Setup Go
+        uses: actions/setup-go@4b73464bb391d4059bd26b0524d20df3927bd417 # v6.3.0
+        with:
+          go-version-file: go.mod
+
+      - name: Build installer manifests
+        env:
+          VERSION: ${{ needs.version.outputs.version }}
+        run: make build-installer IMG="polarscloud/polars-k8s-operator:$VERSION"
+
+      - name: Upload install.yaml as workflow artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: install.yaml
+          path: dist/install.yaml
+
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.version.outputs.version }}
+          PRERELEASE: ${{ needs.version.outputs.prerelease }}
+          DRY_RUN: ${{ inputs.dry-run }}
+        run: |
+          TAG="v$VERSION"
+          FLAGS=""
+          [ "$PRERELEASE" = "true" ] && FLAGS="$FLAGS --prerelease"
+          if [ "$DRY_RUN" = "true" ]; then
+            echo "Dry run; would create release $TAG (flags:$FLAGS) with:"
+            ls -l dist/install.yaml
+            exit 0
+          fi
+          gh release create "$TAG" \
+            --repo "$GITHUB_REPOSITORY" \
+            --verify-tag \
+            --generate-notes \
+            $FLAGS \
+            dist/install.yaml \
+          || gh release upload "$TAG" dist/install.yaml --clobber --repo "$GITHUB_REPOSITORY"
+
+  chart:
+    permissions:
+      contents: read
+    name: PR chart to polars-inc/helm-charts
+    runs-on: ubuntu-latest
+    needs: [version, docker]
+    steps:
+      - name: Clone the code
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      - name: Setup Go
+        uses: actions/setup-go@4b73464bb391d4059bd26b0524d20df3927bd417 # v6.3.0
+        with:
+          go-version-file: go.mod
+
+      - name: Generate Helm chart
+        env:
+          VERSION: ${{ needs.version.outputs.version }}
+        run: |
+          make helm-generate IMG="polarscloud/polars-k8s-operator:$VERSION"
+          yq -i '.version = strenv(VERSION) | .appVersion = strenv(VERSION)' dist/chart/Chart.yaml
+
+      - name: Install Helm
+        run: make install-helm
+
+      - name: Mint helm-charts token
+        id: app-token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          app-id: ${{ secrets.RELEASE_BOT_APP_ID }}
+          private-key: ${{ secrets.RELEASE_BOT_PRIVATE_KEY }}
+          owner: polars-inc
+          repositories: helm-charts
+
+      - name: Clone polars-inc/helm-charts
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          repository: polars-inc/helm-charts
+          token: ${{ steps.app-token.outputs.token }}
+          path: helm-charts
+          persist-credentials: true
+
+      - name: Sync chart
+        run: |
+          rsync -a --delete dist/chart/ helm-charts/charts/polars-k8s-operator/
+          helm lint helm-charts/charts/polars-k8s-operator
+
+      - name: Open pull request
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          APP_SLUG: ${{ steps.app-token.outputs.app-slug }}
+          VERSION: ${{ needs.version.outputs.version }}
+          DRY_RUN: ${{ inputs.dry-run }}
+        working-directory: helm-charts
+        run: |
+          if [ -z "$(git status --porcelain charts/polars-k8s-operator)" ]; then
+            echo "Chart unchanged; nothing to release."
+            exit 0
+          fi
+          if [ "$DRY_RUN" = "true" ]; then
+            echo "Dry run; would open a PR with these changes:"
+            git add -N charts/polars-k8s-operator
+            git diff charts/polars-k8s-operator
+            exit 0
+          fi
+          BRANCH="release-polars-k8s-operator-$VERSION"
+          TITLE="Release polars-k8s-operator Chart $VERSION App $VERSION"
+          BOT_ID="$(gh api "/users/${APP_SLUG}[bot]" --jq .id)"
+          git config user.name "${APP_SLUG}[bot]"
+          git config user.email "${BOT_ID}+${APP_SLUG}[bot]@users.noreply.github.com"
+          git checkout -b "$BRANCH"
+          git add charts/polars-k8s-operator
+          git commit -m "$TITLE"
+          git push -f origin "$BRANCH"
+          gh pr create \
+            --repo polars-inc/helm-charts \
+            --head "$BRANCH" \
+            --title "$TITLE" \
+            --body "Automated chart release from polars-inc/polars-k8s-operator (v$VERSION)." \
+          || gh pr view "$BRANCH" --repo polars-inc/helm-charts

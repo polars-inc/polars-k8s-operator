@@ -1,0 +1,18 @@
+changelog:
+  exclude:
+    labels:
+      - skip-changelog
+    authors:
+      - dependabot[bot]
+      - k8s-operator-helm-release-bot[bot]
+  categories:
+    - title: Features
+      labels:
+        - feature
+        - enhancement
+    - title: Bug fixes
+      labels:
+        - bug
+    - title: Other changes
+      labels:
+        - "*"

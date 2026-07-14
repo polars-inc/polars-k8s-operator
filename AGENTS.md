@@ -248,31 +248,31 @@ kubebuilder create api --group example --version v1alpha1 --kind MyApp \
 
 Generated code includes: status conditions (`metav1.Condition`), finalizers, owner references, events, idempotent reconciliation.
 
-## Distribution Options
+## Distribution & Releases
 
-### Option 1: YAML Bundle (Kustomize)
+Releases are tag-driven. Pushing a semver tag (`vX.Y.Z`, pre-releases like
+`vX.Y.Z-rc.1` allowed) triggers `.github/workflows/release.yml`:
 
-```bash
-# Generate dist/install.yaml from Kustomize manifests
-make build-installer IMG=<registry>/<project>:tag
-```
+1. `version` — resolves and validates the version from the tag (or `workflow_dispatch` input).
+2. `docker` — multi-arch image (amd64/arm64) pushed to Docker Hub `polarscloud/polars-k8s-operator`.
+3. `manifests` (after `docker`) — GitHub release with auto-generated notes (categorized via `.github/release.yml`) and `dist/install.yaml` attached; pre-release versions get `--prerelease`.
+4. `chart` (after `docker`) — regenerates the chart, stamps `version`/`appVersion` from the tag, and opens a PR against `polars-inc/helm-charts` (`charts/polars-k8s-operator`) authenticated as the org GitHub App; merging that PR publishes the chart via chart-releaser.
 
-**Key points:**
-- The `dist/install.yaml` is generated from Kustomize manifests (CRDs, RBAC, Deployment)
-- Commit this file to your repository for easy distribution
-- Users only need `kubectl` to install (no additional tools required)
+The workflow also supports `workflow_dispatch` with a dry-run option (no image
+push, draft release, chart diff logged instead of a PR).
 
-**Example:** Users install with a single command:
-```bash
-kubectl apply -f https://raw.githubusercontent.com/<org>/<repo>/<tag>/dist/install.yaml
-```
-
-### Option 2: Helm Chart
-
-```bash
-kubebuilder edit --plugins=helm/v2-alpha                      # Generates dist/chart/ (default)
-kubebuilder edit --plugins=helm/v2-alpha --output-dir=charts  # Generates charts/chart/
-```
+**Key rules:**
+- `dist/` is **not tracked** (gitignored). Never hand-edit `dist/chart` — it is
+  regenerated with `--force` and edits are lost. Durable chart/manifest changes
+  belong in `config/`.
+- Regenerate locally with `make helm-generate [IMG=...]` (wraps `build-installer`
+  + `kubebuilder edit --plugins=helm/v2-alpha --force`; kubebuilder version is
+  pinned to `cliVersion` in `PROJECT`). The image passed via `IMG` becomes
+  `manager.image.repository` in the chart values; the image tag defaults to the
+  chart's `appVersion`.
+- `make build-installer`/`helm-generate` rewrite the `images:` block in
+  `config/manager/kustomization.yaml`; the committed default is
+  `controller:latest` so default runs stay clean.
 
 **For development:**
 ```bash
@@ -284,21 +284,12 @@ make helm-history                                        # View release history
 make helm-rollback                                       # Rollback to previous version
 ```
 
-**For end users/production:**
+**For end users:**
 ```bash
-helm install my-release ./<output-dir>/chart/ --namespace <ns> --create-namespace
-```
-
-**Important:** If you add webhooks or modify manifests after initial chart generation:
-1. Backup any customizations in `<output-dir>/chart/values.yaml` and `<output-dir>/chart/manager/manager.yaml`
-2. Re-run: `kubebuilder edit --plugins=helm/v2-alpha --force` (use same `--output-dir` if customized)
-3. Manually restore your custom values from the backup
-
-### Publish Container Image
-
-```bash
-export IMG=<registry>/<project>:<version>
-make docker-build docker-push IMG=$IMG
+helm repo add polars-inc https://polars-inc.github.io/helm-charts
+helm install polars-k8s-operator polars-inc/polars-k8s-operator
+# or the YAML bundle:
+kubectl apply -f https://github.com/polars-inc/polars-k8s-operator/releases/download/vX.Y.Z/install.yaml
 ```
 
 ## References

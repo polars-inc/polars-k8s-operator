@@ -150,6 +150,11 @@ build-installer: manifests generate kustomize ## Generate a consolidated YAML wi
 	cd config/manager && "$(KUSTOMIZE)" edit set image controller=${IMG}
 	"$(KUSTOMIZE)" build config/default > dist/install.yaml
 
+.PHONY: helm-generate
+helm-generate: build-installer kubebuilder ## Generate the Helm chart in dist/chart. Specify an image with IMG (modifies config/manager/kustomization.yaml).
+	rm -rf dist/chart
+	$(KUBEBUILDER) edit --plugins=helm/v2-alpha --force
+
 ##@ Deployment
 
 ifndef ignore-not-found
@@ -189,10 +194,16 @@ KUSTOMIZE ?= $(LOCALBIN)/kustomize
 CONTROLLER_GEN ?= $(LOCALBIN)/controller-gen
 ENVTEST ?= $(LOCALBIN)/setup-envtest
 GOLANGCI_LINT = $(LOCALBIN)/golangci-lint
+KUBEBUILDER ?= $(LOCALBIN)/kubebuilder
 
 ## Tool Versions
 KUSTOMIZE_VERSION ?= v5.8.1
 CONTROLLER_TOOLS_VERSION ?= v0.21.0
+
+#KUBEBUILDER_VERSION is derived from cliVersion in the PROJECT file so chart generation stays reproducible
+KUBEBUILDER_VERSION ?= $(shell v=$$(sed -n 's/^cliVersion: *//p' PROJECT); \
+  [ -n "$$v" ] || { echo "Set KUBEBUILDER_VERSION manually (no cliVersion in PROJECT)" >&2; exit 1; }; \
+  printf 'v%s\n' "$$v")
 
 #ENVTEST_VERSION is the controller-runtime version to use for setup-envtest, derived from go.mod
 ENVTEST_VERSION ?= $(shell v='$(call gomodver,sigs.k8s.io/controller-runtime)'; \
@@ -228,6 +239,11 @@ envtest: $(ENVTEST) ## Download setup-envtest locally if necessary.
 $(ENVTEST): $(LOCALBIN)
 	$(call go-install-tool,$(ENVTEST),sigs.k8s.io/controller-runtime/tools/setup-envtest,$(ENVTEST_VERSION))
 
+.PHONY: kubebuilder
+kubebuilder: $(KUBEBUILDER) ## Download kubebuilder locally if necessary.
+$(KUBEBUILDER): $(LOCALBIN)
+	$(call go-install-tool,$(KUBEBUILDER),sigs.k8s.io/kubebuilder/v4,$(KUBEBUILDER_VERSION))
+
 .PHONY: golangci-lint
 golangci-lint: $(GOLANGCI_LINT) ## Download golangci-lint locally if necessary.
 $(GOLANGCI_LINT): $(LOCALBIN)
@@ -257,3 +273,50 @@ endef
 define gomodver
 $(shell go list -m -f '{{if .Replace}}{{.Replace.Version}}{{else}}{{.Version}}{{end}}' $(1) 2>/dev/null)
 endef
+
+##@ Helm Deployment
+
+## Helm binary to use for deploying the chart
+HELM ?= helm
+## Namespace to deploy the Helm release
+HELM_NAMESPACE ?= k8s-operator-system
+## Name of the Helm release
+HELM_RELEASE ?= k8s-operator
+## Path to the Helm chart directory
+HELM_CHART_DIR ?= dist/chart
+## Additional arguments to pass to helm commands
+HELM_EXTRA_ARGS ?=
+
+.PHONY: install-helm
+install-helm: ## Install the latest version of Helm.
+	@command -v $(HELM) >/dev/null 2>&1 || { \
+		echo "Installing Helm..." && \
+		curl -fsSL https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-4 | bash; \
+	}
+
+.PHONY: helm-deploy
+helm-deploy: install-helm ## Deploy manager to the K8s cluster via Helm. Specify an image with IMG.
+	$(HELM) upgrade --install $(HELM_RELEASE) $(HELM_CHART_DIR) \
+		--namespace $(HELM_NAMESPACE) \
+		--create-namespace \
+		--set manager.image.repository=$${IMG%:*} \
+		--set manager.image.tag=$${IMG##*:} \
+		--wait \
+		--timeout 5m \
+		$(HELM_EXTRA_ARGS)
+
+.PHONY: helm-uninstall
+helm-uninstall: ## Uninstall the Helm release from the K8s cluster.
+	$(HELM) uninstall $(HELM_RELEASE) --namespace $(HELM_NAMESPACE)
+
+.PHONY: helm-status
+helm-status: ## Show Helm release status.
+	$(HELM) status $(HELM_RELEASE) --namespace $(HELM_NAMESPACE)
+
+.PHONY: helm-history
+helm-history: ## Show Helm release history.
+	$(HELM) history $(HELM_RELEASE) --namespace $(HELM_NAMESPACE)
+
+.PHONY: helm-rollback
+helm-rollback: ## Rollback to previous Helm release.
+	$(HELM) rollback $(HELM_RELEASE) --namespace $(HELM_NAMESPACE)
