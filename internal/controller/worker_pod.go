@@ -103,7 +103,7 @@ func computedWorkerPodSpec(cluster *computev1.PolarsCluster, containerName strin
 		volumes = append(volumes, licenseVolumes...)
 		volumeMounts = append(volumeMounts, licenseMounts...)
 	case spec.License.LicenseServer != nil:
-		license.Section("license_server").String("address", spec.License.LicenseServer.URI)
+		license.Section("license_server").String("uri", spec.License.LicenseServer.URI)
 	}
 
 	if spec.Telemetry != nil {

@@ -425,7 +425,7 @@ func TestBuildWorkerPodTemplate_LicenseServer(t *testing.T) {
 	result, err := BuildWorkerPodTemplate(cluster)
 	g.Expect(err).NotTo(HaveOccurred())
 
-	address, ok := findEnv(result.Spec.Containers[0].Env, "PC_CUBLET__license__license_server__address")
+	address, ok := findEnv(result.Spec.Containers[0].Env, "PC_CUBLET__license__license_server__uri")
 	g.Expect(ok).To(BeTrue())
 	g.Expect(address.Value).To(Equal("https://license-server.polars.svc.cluster.local:50051"))
 }
