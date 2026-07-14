@@ -8,6 +8,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
@@ -16,6 +17,8 @@ import (
 
 	computev1 "polars-inc/k8s-operator/api/v1"
 )
+
+const testStandInImage = "busybox"
 
 var _ = Describe("PolarsCluster Controller", func() {
 	Context("When reconciling a resource", func() {
@@ -59,20 +62,20 @@ var _ = Describe("PolarsCluster Controller", func() {
 								}}},
 							},
 						},
-						SchedulerSpec: computev1.SchedulerSpec{
+						Scheduler: &computev1.SchedulerSpec{
 							PodTemplate: &corev1.PodTemplateSpec{
 								Spec: corev1.PodSpec{
 									Containers: []corev1.Container{
-										{Name: "scheduler", Image: "busybox"},
+										{Name: "scheduler", Image: testStandInImage},
 									},
 								},
 							},
 						},
 						WorkerPool: computev1.WorkerPoolDeclaration{
-							PodTemplate: corev1.PodTemplateSpec{
+							PodTemplate: &corev1.PodTemplateSpec{
 								Spec: corev1.PodSpec{
 									Containers: []corev1.Container{
-										{Name: "worker", Image: "busybox"},
+										{Name: "worker", Image: testStandInImage},
 									},
 								},
 							},
@@ -123,6 +126,15 @@ var _ = Describe("PolarsCluster Controller", func() {
 				Name: resourceName + "-scheduler", Namespace: resourceNamespace,
 			}, &schedulerPod)).To(Succeed())
 			Expect(schedulerPod.Labels).To(HaveKey(templateHashLabel))
+
+			By("verifying the status reflects the reconciled generation")
+			Expect(k8sClient.Get(ctx, typeNamespacedName, polarscluster)).To(Succeed())
+			Expect(polarscluster.Status.ObservedGeneration).To(Equal(polarscluster.Generation))
+			for _, condType := range []string{"Ready", "SchedulerReady", "WorkerPoolReady"} {
+				cond := meta.FindStatusCondition(polarscluster.Status.Conditions, condType)
+				Expect(cond).NotTo(BeNil(), "expected condition %s", condType)
+				Expect(cond.ObservedGeneration).To(Equal(polarscluster.Generation))
+			}
 		})
 
 		It("should delete pods listed in WorkersToDelete and clear the field", func() {
@@ -180,14 +192,14 @@ var _ = Describe("PolarsCluster validation", func() {
 				License: computev1.LicenseSpec{
 					LicenseServer: &computev1.LicenseServerSpec{URI: "https://license-server:50051"},
 				},
-				SchedulerSpec: computev1.SchedulerSpec{
+				Scheduler: &computev1.SchedulerSpec{
 					PodTemplate: &corev1.PodTemplateSpec{
-						Spec: corev1.PodSpec{Containers: []corev1.Container{{Name: "scheduler", Image: "busybox"}}},
+						Spec: corev1.PodSpec{Containers: []corev1.Container{{Name: "scheduler", Image: testStandInImage}}},
 					},
 				},
 				WorkerPool: computev1.WorkerPoolDeclaration{
-					PodTemplate: corev1.PodTemplateSpec{
-						Spec: corev1.PodSpec{Containers: []corev1.Container{{Name: "worker", Image: "busybox"}}},
+					PodTemplate: &corev1.PodTemplateSpec{
+						Spec: corev1.PodSpec{Containers: []corev1.Container{{Name: "worker", Image: testStandInImage}}},
 					},
 					MinReplicas: 1,
 					MaxReplicas: new(int32(3)),

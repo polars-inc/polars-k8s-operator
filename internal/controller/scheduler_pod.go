@@ -23,12 +23,12 @@ const (
 
 // BuildSchedulerPodTemplate builds the scheduler pod: computed env/volumes/
 // ports are strategic-merged onto the first container of
-// schedulerSpec.podTemplate. The template is optional when a runtime is
+// scheduler.podTemplate. The template is optional when a runtime is
 // configured. Callers set the owner reference before creating.
 func BuildSchedulerPodTemplate(cluster *computev1.PolarsCluster) (corev1.Pod, error) {
 	var base corev1.PodTemplateSpec
-	if cluster.Spec.SchedulerSpec.PodTemplate != nil {
-		base = *cluster.Spec.SchedulerSpec.PodTemplate
+	if s := cluster.Spec.Scheduler; s != nil && s.PodTemplate != nil {
+		base = *s.PodTemplate
 	}
 
 	containerName := componentScheduler
@@ -37,7 +37,7 @@ func BuildSchedulerPodTemplate(cluster *computev1.PolarsCluster) (corev1.Pod, er
 		containerName = base.Spec.Containers[0].Name
 		userProbe = base.Spec.Containers[0].ReadinessProbe != nil
 	} else if cluster.Spec.Runtime == nil {
-		return corev1.Pod{}, fmt.Errorf("schedulerSpec.podTemplate must include at least one container when no runtime is configured")
+		return corev1.Pod{}, fmt.Errorf("scheduler.podTemplate must include at least one container when no runtime is configured")
 	}
 
 	mergedSpec, err := mergePodSpec(base.Spec, computedSchedulerPodSpec(cluster, containerName, !userProbe))
@@ -116,10 +116,10 @@ func computedSchedulerPodSpec(cluster *computev1.PolarsCluster, containerName st
 
 	computedAnonymousResultsEnv(scheduler.Section("anonymous_result_location"), spec.AnonymousResults)
 
-	if spec.CheckpointData != nil {
+	if spec.Checkpoint != nil {
 		checkpoint := scheduler.Section("checkpoint")
 		checkpoint.Bool("enabled", true)
-		checkpoint.String("period", checkpointPeriod(cluster))
+		checkpoint.String("period", checkpointPeriod(*spec.Checkpoint))
 	}
 
 	if spec.Lineage != nil {

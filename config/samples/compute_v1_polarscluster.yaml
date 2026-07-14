@@ -21,7 +21,6 @@ spec:
       dist:
         repository: polars-on-premises
         pullPolicy: IfNotPresent
-  schedulerSpec: {}
   workerPool:
     minReplicas: 1
     maxReplicas: 3

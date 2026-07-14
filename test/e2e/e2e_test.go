@@ -331,7 +331,7 @@ var _ = Describe("Manager", Ordered, func() {
 			Expect(err).NotTo(HaveOccurred())
 			Expect(output).To(Equal("/app/temporary_data"))
 
-			By("verifying the checkpoint-data S3 endpoint was reflected from spec.checkpointData")
+			By("verifying the checkpoint-data S3 endpoint was reflected from spec.checkpoint")
 			checkpointURL, err := containerEnvValue(clusterNamespace, workerPod, "PC_CUBLET__worker__checkpoint_location__s3__url")
 			Expect(err).NotTo(HaveOccurred())
 			Expect(checkpointURL).To(Equal(checkpointDataS3Endpoint))
@@ -366,7 +366,7 @@ var _ = Describe("Manager", Ordered, func() {
 
 			hostname, err := containerEnvValue(clusterNamespace, names[0], "PC_CUBLET__static_leader__scheduler_service__public_addr__hostname")
 			Expect(err).NotTo(HaveOccurred())
-			Expect(hostname).To(Equal(fmt.Sprintf("%s-scheduler-internal.%s.svc.cluster.local", e2ePolarsClusterName, clusterNamespace)))
+			Expect(hostname).To(Equal(e2ePolarsClusterName + "-scheduler-internal"))
 		})
 
 		itRecreatesSchedulerOnTemplateChange(busyboxSpecConfig)
@@ -740,7 +740,7 @@ func itRecreatesSchedulerOnTemplateChange(cfg sharedSpecConfig) {
 		By("patching the scheduler pod template with a new env var")
 		cmd = exec.Command("kubectl", "patch", "polarscluster", cfg.clusterName, "-n", cfg.namespace,
 			"--type=json",
-			"-p", `[{"op":"add","path":"/spec/schedulerSpec/podTemplate/spec/containers/0/env","value":[{"name":"ROLLOUT_MARKER","value":"1"}]}]`)
+			"-p", `[{"op":"add","path":"/spec/scheduler/podTemplate/spec/containers/0/env","value":[{"name":"ROLLOUT_MARKER","value":"1"}]}]`)
 		_, err = utils.Run(cmd)
 		Expect(err).NotTo(HaveOccurred())
 
@@ -841,11 +841,11 @@ func busyboxPolarsCluster(ns, name string, minReplicas, maxReplicas, replicas in
 				WorkspaceID:  fieldRefValue("metadata.name"),
 			},
 		},
-		SchedulerSpec: computev1.SchedulerSpec{
+		Scheduler: &computev1.SchedulerSpec{
 			PodTemplate: ptr.To(busyboxPodTemplate("scheduler")),
 		},
 		WorkerPool: computev1.WorkerPoolDeclaration{
-			PodTemplate: busyboxPodTemplate("worker"),
+			PodTemplate: ptr.To(busyboxPodTemplate("worker")),
 			MinReplicas: minReplicas,
 			MaxReplicas: ptr.To(maxReplicas),
 			Replicas:    replicas,
@@ -862,8 +862,10 @@ func polarsClusterManifest(ns, name string, poolReplicas int) string {
 	cluster.Spec.AnonymousResults = &computev1.AnonymousResultsSpec{
 		S3: &computev1.AnonymousResultsS3Spec{Endpoint: anonymousResultsS3Endpoint},
 	}
-	cluster.Spec.CheckpointData = &computev1.CheckpointDataSpec{
-		S3: &computev1.CheckpointS3Spec{Endpoint: checkpointDataS3Endpoint},
+	cluster.Spec.Checkpoint = &computev1.CheckpointSpec{
+		Data: computev1.CheckpointDataSpec{
+			S3: &computev1.CheckpointS3Spec{Endpoint: checkpointDataS3Endpoint},
+		},
 	}
 	return mustMarshalManifest(cluster)
 }
@@ -873,15 +875,13 @@ func polarsClusterManifestWithPoolBounds(ns, name string, minReplicas, maxReplic
 }
 
 func realImagePolarsClusterManifest(ns, name string) string {
-	// The podTemplates only name the containers (matching the ones the
-	// operator composes, so they merge): the scheduler stub gives the shared
+	// The scheduler podTemplate only names the container (matching the one
+	// the operator composes, so they merge): it gives the shared
 	// template-change spec's JSON patch an existing path to add env vars
-	// under, and everything else — images, commands, and the real TCP/gRPC
+	// under. Everything else — images, commands, and the real TCP/gRPC
 	// readiness probes — comes from the composed runtime.
-	namedContainerTemplate := func(containerName string) corev1.PodTemplateSpec {
-		return corev1.PodTemplateSpec{
-			Spec: corev1.PodSpec{Containers: []corev1.Container{{Name: containerName}}},
-		}
+	schedulerStub := &corev1.PodTemplateSpec{
+		Spec: corev1.PodSpec{Containers: []corev1.Container{{Name: "scheduler"}}},
 	}
 
 	cluster := newPolarsCluster(ns, name)
@@ -896,17 +896,16 @@ func realImagePolarsClusterManifest(ns, name string) string {
 		},
 		Runtime: &computev1.RuntimeSpec{
 			Composed: computev1.ComposedRuntimeSpec{
-				Dist: computev1.ImageSpec{
+				Dist: &computev1.ImageSpec{
 					Repository: realImageRepository,
 					PullPolicy: corev1.PullNever,
 				},
 			},
 		},
-		SchedulerSpec: computev1.SchedulerSpec{
-			PodTemplate: ptr.To(namedContainerTemplate("scheduler")),
+		Scheduler: &computev1.SchedulerSpec{
+			PodTemplate: schedulerStub,
 		},
 		WorkerPool: computev1.WorkerPoolDeclaration{
-			PodTemplate: namedContainerTemplate("worker"),
 			MinReplicas: 1,
 			MaxReplicas: ptr.To(int32(3)),
 			Replicas:    1,

@@ -22,7 +22,10 @@ const (
 // template is optional when a runtime is configured. Callers set the owner
 // reference before creating.
 func BuildWorkerPodTemplate(cluster *computev1.PolarsCluster) (corev1.Pod, error) {
-	base := cluster.Spec.WorkerPool.PodTemplate
+	var base corev1.PodTemplateSpec
+	if cluster.Spec.WorkerPool.PodTemplate != nil {
+		base = *cluster.Spec.WorkerPool.PodTemplate
+	}
 
 	containerName := componentWorker
 	userProbe := false
@@ -57,7 +60,12 @@ func BuildWorkerPodTemplate(cluster *computev1.PolarsCluster) (corev1.Pod, error
 func computedWorkerPodSpec(cluster *computev1.PolarsCluster, containerName string, baseContainer corev1.Container, injectProbe bool) corev1.PodSpec {
 	spec := cluster.Spec
 	wp := spec.WorkerPool
-	internalHostname := fmt.Sprintf("%s.%s.svc.%s", schedulerInternalServiceName(cluster), cluster.Namespace, resolveClusterDomain(cluster))
+	// Bare Service name, not an FQDN: workers always share the Service's
+	// namespace, so the pod's first DNS search domain resolves it in a
+	// single query. A "<svc>.<ns>.svc.<domain>" name has fewer dots than
+	// resolv.conf's ndots:5 and walks the whole search list (3 NXDOMAINs per
+	// lookup) before resolving — and needs the cluster domain configured.
+	internalHostname := schedulerInternalServiceName(cluster)
 
 	b := newEnvBuilder()
 	b.String("RUST_BACKTRACE", "full")
@@ -215,10 +223,11 @@ func computedShuffleDataConfig(b *envBuilder, cluster *computev1.PolarsCluster) 
 // computedCheckpointDataEnv appends CheckpointDataSpec's env vars under b
 // (scoped to "...__checkpoint_location").
 func computedCheckpointDataEnv(b *envBuilder, cluster *computev1.PolarsCluster) {
-	checkpointData := cluster.Spec.CheckpointData
-	if checkpointData == nil {
+	checkpointSpec := cluster.Spec.Checkpoint
+	if checkpointSpec == nil {
 		return
 	}
+	checkpointData := checkpointSpec.Data
 
 	switch {
 	case checkpointData.S3 != nil:

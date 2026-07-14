@@ -27,12 +27,6 @@ type PolarsClusterSpec struct {
 	// +optional
 	ClusterID string `json:"clusterID,omitempty"`
 
-	// ClusterDomain is the Kubernetes cluster DNS domain (the suffix used in
-	// "<svc>.<ns>.svc.<domain>").
-	// +kubebuilder:default="cluster.local"
-	// +optional
-	ClusterDomain string `json:"clusterDomain,omitempty"`
-
 	// AcceptEula must be set to true to use the On-Prem Enterprise license.
 	// +kubebuilder:default=false
 	// +optional
@@ -70,14 +64,8 @@ type PolarsClusterSpec struct {
 	// +optional
 	AnonymousResults *AnonymousResultsSpec `json:"anonymousResults,omitempty"`
 
-	// CheckpointPeriod is the period at which checkpoints are created.
-	// Checkpointing is enabled whenever CheckpointData is configured.
-	// +kubebuilder:default="20m"
 	// +optional
-	CheckpointPeriod *metav1.Duration `json:"checkpointPeriod,omitempty"`
-
-	// +optional
-	CheckpointData *CheckpointDataSpec `json:"checkpointData,omitempty"`
+	Checkpoint *CheckpointSpec `json:"checkpoint,omitempty"`
 
 	// +optional
 	Lineage *LineageSpec `json:"lineage,omitempty"`
@@ -90,8 +78,11 @@ type PolarsClusterSpec struct {
 	// +optional
 	HostMetrics *HostMetricsSpec `json:"hostMetrics,omitempty"`
 
-	SchedulerSpec SchedulerSpec         `json:"schedulerSpec"`
-	WorkerPool    WorkerPoolDeclaration `json:"workerPool"`
+	// Scheduler configures the cluster's scheduler pod and Services; all of
+	// it is optional when a runtime composes the scheduler container.
+	// +optional
+	Scheduler  *SchedulerSpec        `json:"scheduler,omitempty"`
+	WorkerPool WorkerPoolDeclaration `json:"workerPool"`
 }
 
 // ValueOrSource holds either a literal value or a reference to where the
@@ -176,7 +167,7 @@ type ComposedRuntimeSpec struct {
 	// Dist is the Polars distribution image. Repository defaults to
 	// "polarscloud/polars-on-premises" and tag defaults to spec.version.
 	// +optional
-	Dist ImageSpec `json:"dist,omitempty"`
+	Dist *ImageSpec `json:"dist,omitempty"`
 
 	// Runtime is the Python base image the distribution runs on. Defaults to
 	// "python:3.13.9-slim-bookworm".
@@ -264,6 +255,15 @@ type SharedFilesystemSpec struct {
 	Path string `json:"path"`
 }
 
+type CheckpointSpec struct {
+	// Period is the period at which checkpoints are created.
+	// +kubebuilder:default="20m"
+	// +optional
+	Period *metav1.Duration `json:"period,omitempty"`
+
+	Data CheckpointDataSpec `json:"data"`
+}
+
 type LineageSpec struct {
 	Transport LineageTransportSpec `json:"transport"`
 }
@@ -279,7 +279,7 @@ type LineageTransportHTTPSpec struct {
 
 type SchedulerSpec struct {
 	// +optional
-	Services SchedulerServicesSpec `json:"services,omitempty"`
+	Services *SchedulerServicesSpec `json:"services,omitempty"`
 
 	// +optional
 	PodTemplate *v1.PodTemplateSpec `json:"podTemplate,omitempty"`
@@ -288,22 +288,22 @@ type SchedulerSpec struct {
 type SchedulerServicesSpec struct {
 	// Scheduler exposes the client-facing scheduler port (5051).
 	// +optional
-	Scheduler ServiceConfig `json:"scheduler,omitempty"`
+	Scheduler *ServiceConfig `json:"scheduler,omitempty"`
 
 	// Internal exposes the worker-facing scheduler (5050) and observatory
 	// gRPC (5049) ports.
 	// +optional
-	Internal ServiceConfig `json:"internal,omitempty"`
+	Internal *ServiceConfig `json:"internal,omitempty"`
 
 	// Observatory exposes the observatory dashboard REST port (3001).
 	// +optional
-	Observatory ServiceConfig `json:"observatory,omitempty"`
+	Observatory *ServiceConfig `json:"observatory,omitempty"`
 }
 
 type ServiceConfig struct {
 	// +kubebuilder:default="ClusterIP"
 	// +optional
-	Type v1.ServiceType `json:"type,omitempty"`
+	Type *v1.ServiceType `json:"type,omitempty"`
 
 	// +optional
 	Annotations map[string]string `json:"annotations,omitempty"`
@@ -313,7 +313,7 @@ type ServiceConfig struct {
 // +kubebuilder:validation:XValidation:rule="self.replicas >= self.minReplicas && (!has(self.maxReplicas) || self.replicas <= self.maxReplicas)",message="replicas must be within [minReplicas, maxReplicas]",messageExpression="'replicas must be within [%d, %d], got %d'.format([self.minReplicas, self.maxReplicas, self.replicas])"
 type WorkerPoolDeclaration struct {
 	// +optional
-	PodTemplate v1.PodTemplateSpec `json:"podTemplate,omitempty"`
+	PodTemplate *v1.PodTemplateSpec `json:"podTemplate,omitempty"`
 
 	// +kubebuilder:validation:Minimum=0
 	MinReplicas int32 `json:"minReplicas"`
@@ -473,6 +473,12 @@ type PolarsClusterStatus struct {
 	// +optional
 	Conditions []metav1.Condition `json:"conditions,omitempty"`
 
+	// ObservedGeneration is the most recent spec generation reflected by
+	// this status. Clients should treat the status as stale while it trails
+	// metadata.generation.
+	// +optional
+	ObservedGeneration int64 `json:"observedGeneration,omitempty"`
+
 	// +optional
 	Scheduler SchedulerStatus `json:"scheduler,omitempty"`
 
@@ -483,6 +489,12 @@ type PolarsClusterStatus struct {
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
 // +kubebuilder:subresource:scale:specpath=.spec.workerPool.replicas,statuspath=.status.workerPool.replicas,selectorpath=.status.workerPool.selector
+// +kubebuilder:printcolumn:name="Ready",type=string,JSONPath=".status.conditions[?(@.type=='Ready')].status",description="Whether the scheduler and worker pool are both ready"
+// +kubebuilder:printcolumn:name="Scheduler",type=string,JSONPath=".status.conditions[?(@.type=='SchedulerReady')].status",description="Whether the scheduler pod is ready"
+// +kubebuilder:printcolumn:name="Workers",type=integer,JSONPath=".spec.workerPool.replicas",description="Desired worker replicas"
+// +kubebuilder:printcolumn:name="Available",type=integer,JSONPath=".status.workerPool.readyReplicas",description="Ready worker replicas"
+// +kubebuilder:printcolumn:name="Version",type=string,JSONPath=".spec.version",description="Polars on-premises release"
+// +kubebuilder:printcolumn:name="Age",type=date,JSONPath=".metadata.creationTimestamp"
 
 // PolarsCluster is the Schema for the polarsclusters API
 type PolarsCluster struct {

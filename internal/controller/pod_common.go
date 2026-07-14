@@ -40,14 +40,6 @@ func resolveClusterID(cluster *computev1.PolarsCluster) string {
 	return fmt.Sprintf("%s/%s", cluster.Namespace, cluster.Name)
 }
 
-// resolveClusterDomain returns the cluster DNS domain, defaulting to "cluster.local".
-func resolveClusterDomain(cluster *computev1.PolarsCluster) string {
-	if cluster.Spec.ClusterDomain != "" {
-		return cluster.Spec.ClusterDomain
-	}
-	return "cluster.local"
-}
-
 // resolveLogLevel returns the configured log level, defaulting to "info".
 func resolveLogLevel(cluster *computev1.PolarsCluster) string {
 	if cluster.Spec.LogLevel != nil {
@@ -70,8 +62,8 @@ func distTag(cluster *computev1.PolarsCluster) string {
 	if cluster.Spec.Runtime == nil {
 		return ""
 	}
-	if tag := cluster.Spec.Runtime.Composed.Dist.Tag; tag != "" {
-		return tag
+	if dist := cluster.Spec.Runtime.Composed.Dist; dist != nil && dist.Tag != "" {
+		return dist.Tag
 	}
 	return cluster.Spec.Version
 }
@@ -109,13 +101,15 @@ func composedRuntimeConfig(cluster *computev1.PolarsCluster) (initContainers []c
 	}
 	composed := cluster.Spec.Runtime.Composed
 
-	distRepository := composed.Dist.Repository
-	if distRepository == "" {
-		distRepository = defaultDistRepository
-	}
-	distPullPolicy := composed.Dist.PullPolicy
-	if distPullPolicy == "" {
-		distPullPolicy = corev1.PullIfNotPresent
+	distRepository := defaultDistRepository
+	distPullPolicy := corev1.PullIfNotPresent
+	if dist := composed.Dist; dist != nil {
+		if dist.Repository != "" {
+			distRepository = dist.Repository
+		}
+		if dist.PullPolicy != "" {
+			distPullPolicy = dist.PullPolicy
+		}
 	}
 
 	runtimeRepository, runtimeTag := defaultRuntimeRepository, defaultRuntimeTag
@@ -236,9 +230,9 @@ func defaultWorkerReadinessProbe(port int32) *corev1.Probe {
 }
 
 // checkpointPeriod returns the checkpoint period, defaulting to 20m.
-func checkpointPeriod(cluster *computev1.PolarsCluster) string {
-	if cluster.Spec.CheckpointPeriod != nil {
-		return cluster.Spec.CheckpointPeriod.Duration.String()
+func checkpointPeriod(checkpointSpec computev1.CheckpointSpec) string {
+	if checkpointSpec.Period != nil {
+		return checkpointSpec.Period.Duration.String()
 	}
 	return defaultCheckpointPeriod
 }

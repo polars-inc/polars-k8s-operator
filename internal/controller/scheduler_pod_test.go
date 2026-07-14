@@ -30,7 +30,7 @@ func schedulerCluster(extra corev1.Container) *computev1.PolarsCluster {
 	return &computev1.PolarsCluster{
 		ObjectMeta: metav1.ObjectMeta{Name: testClusterName, Namespace: testClusterNamespace},
 		Spec: computev1.PolarsClusterSpec{
-			SchedulerSpec: computev1.SchedulerSpec{
+			Scheduler: &computev1.SchedulerSpec{
 				PodTemplate: &corev1.PodTemplateSpec{
 					Spec: corev1.PodSpec{
 						Containers: []corev1.Container{extra},
@@ -133,7 +133,7 @@ func TestBuildSchedulerPodTemplate_PreservesSidecarContainer(t *testing.T) {
 
 	cluster := &computev1.PolarsCluster{
 		Spec: computev1.PolarsClusterSpec{
-			SchedulerSpec: computev1.SchedulerSpec{
+			Scheduler: &computev1.SchedulerSpec{
 				PodTemplate: &corev1.PodTemplateSpec{
 					Spec: corev1.PodSpec{
 						Containers: []corev1.Container{
@@ -207,7 +207,7 @@ func TestBuildSchedulerPodTemplate_NoContainers(t *testing.T) {
 
 	cluster := &computev1.PolarsCluster{
 		Spec: computev1.PolarsClusterSpec{
-			SchedulerSpec: computev1.SchedulerSpec{
+			Scheduler: &computev1.SchedulerSpec{
 				PodTemplate: &corev1.PodTemplateSpec{
 					Spec: corev1.PodSpec{Containers: []corev1.Container{}},
 				},
@@ -227,7 +227,7 @@ func TestBuildSchedulerPodTemplate_ComposedRuntime(t *testing.T) {
 		Spec: computev1.PolarsClusterSpec{
 			Runtime: &computev1.RuntimeSpec{
 				Composed: computev1.ComposedRuntimeSpec{
-					Dist:         computev1.ImageSpec{Tag: "0.6.3"},
+					Dist:         &computev1.ImageSpec{Tag: "0.6.3"},
 					Requirements: "some-package==1.0",
 				},
 			},
@@ -290,7 +290,7 @@ func TestBuildSchedulerPodTemplate_ComposedRuntimeVersionFallback(t *testing.T) 
 	g.Expect(result.Spec.InitContainers[0].Image).To(Equal("polarscloud/polars-on-premises:0.7.0"))
 	g.Expect(result.Labels["app.kubernetes.io/version"]).To(Equal("0.7.0"))
 
-	cluster.Spec.Runtime.Composed.Dist.Tag = "0.6.3"
+	cluster.Spec.Runtime.Composed.Dist = &computev1.ImageSpec{Tag: "0.6.3"}
 	result, err = BuildSchedulerPodTemplate(cluster)
 	g.Expect(err).NotTo(HaveOccurred())
 
@@ -335,8 +335,10 @@ func TestBuildSchedulerPodTemplate_CheckpointEnabledByCheckpointData(t *testing.
 	_, ok := findEnv(result.Spec.Containers[0].Env, "PC_CUBLET__scheduler__checkpoint__enabled")
 	g.Expect(ok).To(BeFalse())
 
-	cluster.Spec.CheckpointData = &computev1.CheckpointDataSpec{
-		S3: &computev1.CheckpointS3Spec{Endpoint: "s3://checkpoints"},
+	cluster.Spec.Checkpoint = &computev1.CheckpointSpec{
+		Data: computev1.CheckpointDataSpec{
+			S3: &computev1.CheckpointS3Spec{Endpoint: "s3://checkpoints"},
+		},
 	}
 	result, err = BuildSchedulerPodTemplate(cluster)
 	g.Expect(err).NotTo(HaveOccurred())

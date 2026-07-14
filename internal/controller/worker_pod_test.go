@@ -18,7 +18,7 @@ func polarsCluster(extra corev1.Container) *computev1.PolarsCluster {
 		ObjectMeta: metav1.ObjectMeta{Name: testClusterName, Namespace: testClusterNamespace},
 		Spec: computev1.PolarsClusterSpec{
 			WorkerPool: computev1.WorkerPoolDeclaration{
-				PodTemplate: corev1.PodTemplateSpec{
+				PodTemplate: &corev1.PodTemplateSpec{
 					Spec: corev1.PodSpec{
 						Containers: []corev1.Container{extra},
 					},
@@ -26,6 +26,27 @@ func polarsCluster(extra corev1.Container) *computev1.PolarsCluster {
 			},
 		},
 	}
+}
+
+func TestBuildWorkerPodTemplate_ComposedRuntimeWithoutTemplate(t *testing.T) {
+	g := NewWithT(t)
+
+	cluster := &computev1.PolarsCluster{
+		ObjectMeta: metav1.ObjectMeta{Name: testClusterName, Namespace: testClusterNamespace},
+		Spec: computev1.PolarsClusterSpec{
+			Version: "0.7.0",
+			Runtime: &computev1.RuntimeSpec{Composed: computev1.ComposedRuntimeSpec{}},
+		},
+	}
+
+	result, err := BuildWorkerPodTemplate(cluster)
+	g.Expect(err).NotTo(HaveOccurred())
+
+	worker := result.Spec.Containers[0]
+	g.Expect(worker.Name).To(Equal(componentWorker))
+	g.Expect(result.Spec.InitContainers).To(HaveLen(1))
+	g.Expect(worker.ReadinessProbe).NotTo(BeNil())
+	g.Expect(worker.ReadinessProbe.GRPC).NotTo(BeNil())
 }
 
 func TestBuildWorkerPodTemplate_PodNaming(t *testing.T) {
@@ -106,7 +127,7 @@ func TestBuildWorkerPodTemplate_PreservesSidecarContainer(t *testing.T) {
 	cluster := &computev1.PolarsCluster{
 		Spec: computev1.PolarsClusterSpec{
 			WorkerPool: computev1.WorkerPoolDeclaration{
-				PodTemplate: corev1.PodTemplateSpec{
+				PodTemplate: &corev1.PodTemplateSpec{
 					Spec: corev1.PodSpec{
 						Containers: []corev1.Container{
 							{Name: testMainContainerName},
@@ -172,11 +193,13 @@ func TestBuildWorkerPodTemplate_CheckpointDataS3(t *testing.T) {
 	g := NewWithT(t)
 
 	cluster := polarsCluster(corev1.Container{})
-	cluster.Spec.CheckpointData = &computev1.CheckpointDataSpec{
-		S3: &computev1.CheckpointS3Spec{
-			Endpoint: "s3://example-bucket/checkpoints",
-			Options: []corev1.EnvVar{
-				{Name: testOptionRegion, Value: "us-west-2"},
+	cluster.Spec.Checkpoint = &computev1.CheckpointSpec{
+		Data: computev1.CheckpointDataSpec{
+			S3: &computev1.CheckpointS3Spec{
+				Endpoint: "s3://example-bucket/checkpoints",
+				Options: []corev1.EnvVar{
+					{Name: testOptionRegion, Value: "us-west-2"},
+				},
 			},
 		},
 	}
@@ -256,7 +279,7 @@ func TestBuildWorkerPodTemplate_NoContainers(t *testing.T) {
 	cluster := &computev1.PolarsCluster{
 		Spec: computev1.PolarsClusterSpec{
 			WorkerPool: computev1.WorkerPoolDeclaration{
-				PodTemplate: corev1.PodTemplateSpec{
+				PodTemplate: &corev1.PodTemplateSpec{
 					Spec: corev1.PodSpec{Containers: []corev1.Container{}},
 				},
 			},
@@ -275,20 +298,15 @@ func TestBuildWorkerPodTemplate_DiscoveryHostnames(t *testing.T) {
 
 	env := result.Spec.Containers[0].Env
 
+	// Bare Service name: same-namespace resolution via the pod's first DNS
+	// search domain, no cluster-domain dependency.
 	scheduler, ok := findEnv(env, "PC_CUBLET__static_leader__scheduler_service__public_addr__hostname")
 	g.Expect(ok).To(BeTrue())
-	g.Expect(scheduler.Value).To(Equal("analytics-scheduler-internal.polars.svc.cluster.local"))
+	g.Expect(scheduler.Value).To(Equal("analytics-scheduler-internal"))
 
 	observatory, ok := findEnv(env, "PC_CUBLET__static_leader__observatory_service__public_addr__hostname")
 	g.Expect(ok).To(BeTrue())
 	g.Expect(observatory.Value).To(Equal(scheduler.Value))
-
-	cluster := polarsCluster(corev1.Container{})
-	cluster.Spec.ClusterDomain = "corp.example"
-	result, err = BuildWorkerPodTemplate(cluster)
-	g.Expect(err).NotTo(HaveOccurred())
-	scheduler, _ = findEnv(result.Spec.Containers[0].Env, "PC_CUBLET__static_leader__scheduler_service__public_addr__hostname")
-	g.Expect(scheduler.Value).To(Equal("analytics-scheduler-internal.polars.svc.corp.example"))
 }
 
 func TestBuildWorkerPodTemplate_CpuReserved(t *testing.T) {

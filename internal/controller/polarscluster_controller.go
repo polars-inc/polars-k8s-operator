@@ -93,7 +93,7 @@ func (r *PolarsClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		return ctrl.Result{}, err
 	}
 	cluster.Status.Scheduler = schedulerStatus
-	setReadyCondition(&cluster.Status.Conditions, "SchedulerReady", schedulerStatus.Ready, "Reconciled", "NotReady")
+	setReadyCondition(cluster, "SchedulerReady", schedulerStatus.Ready, "Reconciled", "NotReady")
 
 	workerPoolStatus, err := r.reconcileWorkerPool(ctx, cluster)
 	if err != nil {
@@ -102,9 +102,11 @@ func (r *PolarsClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 	cluster.Status.WorkerPool = workerPoolStatus
 	workerPoolReady := workerPoolStatus.Replicas == cluster.Spec.WorkerPool.Replicas &&
 		workerPoolStatus.ReadyReplicas == workerPoolStatus.Replicas
-	setReadyCondition(&cluster.Status.Conditions, "WorkerPoolReady", workerPoolReady, "Reconciled", "NotReady")
+	setReadyCondition(cluster, "WorkerPoolReady", workerPoolReady, "Reconciled", "NotReady")
 
-	setReadyCondition(&cluster.Status.Conditions, "Ready", schedulerStatus.Ready && workerPoolReady, "Reconciled", "NotReady")
+	setReadyCondition(cluster, "Ready", schedulerStatus.Ready && workerPoolReady, "Reconciled", "NotReady")
+
+	cluster.Status.ObservedGeneration = cluster.Generation
 
 	if err := r.Status().Update(ctx, cluster); err != nil {
 		return ctrl.Result{}, err
@@ -113,16 +115,21 @@ func (r *PolarsClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 	return ctrl.Result{}, nil
 }
 
-// setReadyCondition upserts a True/False condition of the given type,
-// choosing the reason based on whether ready is true.
-func setReadyCondition(conditions *[]v1.Condition, condType string, ready bool, readyReason, notReadyReason string) {
+// setReadyCondition upserts a True/False condition of the given type on the
+// cluster, choosing the reason based on whether ready is true.
+func setReadyCondition(cluster *computev1.PolarsCluster, condType string, ready bool, readyReason, notReadyReason string) {
 	status := v1.ConditionFalse
 	reason := notReadyReason
 	if ready {
 		status = v1.ConditionTrue
 		reason = readyReason
 	}
-	meta.SetStatusCondition(conditions, v1.Condition{Type: condType, Status: status, Reason: reason})
+	meta.SetStatusCondition(&cluster.Status.Conditions, v1.Condition{
+		Type:               condType,
+		Status:             status,
+		Reason:             reason,
+		ObservedGeneration: cluster.Generation,
+	})
 }
 
 // podTemplateHash returns a stable hash of the pod spec, used to detect when
@@ -264,11 +271,14 @@ func (r *PolarsClusterReconciler) reconcileWorkerPool(ctx context.Context, clust
 // reconcileServices creates or updates the scheduler, internal, and
 // observatory Services.
 func (r *PolarsClusterReconciler) reconcileServices(ctx context.Context, cluster *computev1.PolarsCluster) error {
-	services := cluster.Spec.SchedulerSpec.Services
+	var services computev1.SchedulerServicesSpec
+	if cluster.Spec.Scheduler != nil && cluster.Spec.Scheduler.Services != nil {
+		services = *cluster.Spec.Scheduler.Services
+	}
 
 	desired := []struct {
 		name   string
-		config computev1.ServiceConfig
+		config *computev1.ServiceConfig
 		ports  []corev1.ServicePort
 	}{
 		{
@@ -301,9 +311,13 @@ func (r *PolarsClusterReconciler) reconcileServices(ctx context.Context, cluster
 	}
 
 	for _, svc := range desired {
-		serviceType := svc.config.Type
-		if serviceType == "" {
-			serviceType = corev1.ServiceTypeClusterIP
+		serviceType := corev1.ServiceTypeClusterIP
+		var annotations map[string]string
+		if svc.config != nil {
+			if svc.config.Type != nil && *svc.config.Type != "" {
+				serviceType = *svc.config.Type
+			}
+			annotations = svc.config.Annotations
 		}
 
 		var existing corev1.Service
@@ -314,7 +328,7 @@ func (r *PolarsClusterReconciler) reconcileServices(ctx context.Context, cluster
 					Name:        svc.name,
 					Namespace:   cluster.Namespace,
 					Labels:      standardLabels(cluster, componentScheduler),
-					Annotations: svc.config.Annotations,
+					Annotations: annotations,
 				},
 				Spec: corev1.ServiceSpec{
 					Type:     serviceType,
@@ -335,7 +349,7 @@ func (r *PolarsClusterReconciler) reconcileServices(ctx context.Context, cluster
 			return err
 		}
 
-		existing.Annotations = svc.config.Annotations
+		existing.Annotations = annotations
 		existing.Spec.Type = serviceType
 		existing.Spec.Ports = svc.ports
 		existing.Spec.Selector = selector
