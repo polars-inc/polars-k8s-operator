@@ -319,12 +319,22 @@ type ServiceConfig struct {
 }
 
 // WorkerPoolDeclaration defines the desired state of a PolarsCluster's worker pool.
+// +kubebuilder:validation:XValidation:rule="self.replicas >= self.minReplicas && (!has(self.maxReplicas) || self.replicas <= self.maxReplicas)",message="replicas must be within [minReplicas, maxReplicas]",messageExpression="'replicas must be within [%d, %d], got %d'.format([self.minReplicas, self.maxReplicas, self.replicas])"
 type WorkerPoolDeclaration struct {
 	// +optional
 	PodTemplate *v1.PodTemplateSpec `json:"podTemplate,omitempty"`
 
 	// +kubebuilder:validation:Minimum=0
+	MinReplicas int32 `json:"minReplicas"`
+	// +kubebuilder:validation:Minimum=0
+	// +optional
+	MaxReplicas *int32 `json:"maxReplicas,omitempty"`
+
+	// +kubebuilder:validation:Minimum=0
 	Replicas int32 `json:"replicas"`
+
+	// +optional
+	WorkersToDelete []string `json:"workersToDelete,omitempty"`
 
 	// HeartBeatInterval between workers and the scheduler. Defaults to 5s.
 	// +optional
@@ -487,6 +497,7 @@ type PolarsClusterStatus struct {
 
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
+// +kubebuilder:subresource:scale:specpath=.spec.workerPool.replicas,statuspath=.status.workerPool.replicas,selectorpath=.status.workerPool.selector
 // +kubebuilder:printcolumn:name="Ready",type=string,JSONPath=".status.conditions[?(@.type=='Ready')].status",description="Whether the scheduler and worker pool are both ready"
 // +kubebuilder:printcolumn:name="Scheduler",type=string,JSONPath=".status.conditions[?(@.type=='SchedulerReady')].status",description="Whether the scheduler pod is ready"
 // +kubebuilder:printcolumn:name="Workers",type=integer,JSONPath=".spec.workerPool.replicas",description="Desired worker replicas"

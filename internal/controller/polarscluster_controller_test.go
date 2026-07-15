@@ -141,10 +141,82 @@ var _ = Describe("PolarsCluster Controller", func() {
 			}
 		})
 
+		It("should delete pods listed in WorkersToDelete and clear the field", func() {
+			controllerReconciler := &PolarsClusterReconciler{
+				Client: k8sClient,
+				Scheme: k8sClient.Scheme(),
+			}
+
+			By("scaling the worker pool to 1 replica and reconciling to create the worker pod")
+			Expect(k8sClient.Get(ctx, typeNamespacedName, polarscluster)).To(Succeed())
+			polarscluster.Spec.WorkerPool.Replicas = 1
+			Expect(k8sClient.Update(ctx, polarscluster)).To(Succeed())
+
+			_, err := controllerReconciler.Reconcile(ctx, reconcile.Request{NamespacedName: typeNamespacedName})
+			Expect(err).NotTo(HaveOccurred())
+
+			var pods corev1.PodList
+			Expect(k8sClient.List(ctx, &pods,
+				client.MatchingLabels{clusterLabel: resourceName, componentLabel: componentWorker},
+				client.InNamespace(resourceNamespace),
+			)).To(Succeed())
+			Expect(pods.Items).To(HaveLen(1))
+			workerPodName := pods.Items[0].Name
+
+			By("requesting deletion of the worker pod via WorkersToDelete")
+			Expect(k8sClient.Get(ctx, typeNamespacedName, polarscluster)).To(Succeed())
+			polarscluster.Spec.WorkerPool.WorkersToDelete = []string{workerPodName}
+			Expect(k8sClient.Update(ctx, polarscluster)).To(Succeed())
+
+			_, err = controllerReconciler.Reconcile(ctx, reconcile.Request{NamespacedName: typeNamespacedName})
+			Expect(err).NotTo(HaveOccurred())
+
+			By("verifying the pod was deleted (or marked for deletion) and the field was cleared")
+			var deletedPod corev1.Pod
+			getErr := k8sClient.Get(ctx, types.NamespacedName{Name: workerPodName, Namespace: resourceNamespace}, &deletedPod)
+			if getErr == nil {
+				// envtest has no kubelet to finalize pod termination, so the
+				// object may still be present but marked for deletion.
+				Expect(deletedPod.DeletionTimestamp).NotTo(BeNil())
+			} else {
+				Expect(errors.IsNotFound(getErr)).To(BeTrue())
+			}
+
+			Expect(k8sClient.Get(ctx, typeNamespacedName, polarscluster)).To(Succeed())
+			Expect(polarscluster.Spec.WorkerPool.WorkersToDelete).To(BeEmpty())
+		})
 	})
 })
 
 var _ = Describe("PolarsCluster validation", func() {
+	It("should reject out-of-bounds replicas naming the actual bounds", func() {
+		cluster := &computev1.PolarsCluster{
+			ObjectMeta: metav1.ObjectMeta{Name: "validation-replica-bounds", Namespace: validationNamespace},
+			Spec: computev1.PolarsClusterSpec{
+				License: computev1.LicenseSpec{
+					LicenseServer: &computev1.LicenseServerSpec{URI: testLicenseServerURI},
+				},
+				Scheduler: &computev1.SchedulerSpec{
+					PodTemplate: &corev1.PodTemplateSpec{
+						Spec: corev1.PodSpec{Containers: []corev1.Container{{Name: "scheduler", Image: testStandInImage}}},
+					},
+				},
+				WorkerPool: computev1.WorkerPoolDeclaration{
+					PodTemplate: &corev1.PodTemplateSpec{
+						Spec: corev1.PodSpec{Containers: []corev1.Container{{Name: componentWorker, Image: testStandInImage}}},
+					},
+					MinReplicas: 1,
+					MaxReplicas: new(int32(3)),
+					Replicas:    5,
+				},
+			},
+		}
+
+		err := k8sClient.Create(context.Background(), cluster)
+		Expect(err).To(HaveOccurred())
+		Expect(err.Error()).To(ContainSubstring("replicas must be within [1, 3], got 5"))
+	})
+
 	It("should default version to the operator's default release", func() {
 		ctx := context.Background()
 		cluster := &computev1.PolarsCluster{
@@ -157,7 +229,8 @@ var _ = Describe("PolarsCluster validation", func() {
 					PodTemplate: &corev1.PodTemplateSpec{
 						Spec: corev1.PodSpec{Containers: []corev1.Container{{Name: componentWorker, Image: testStandInImage}}},
 					},
-					Replicas: 1,
+					MinReplicas: 1,
+					Replicas:    1,
 				},
 			},
 		}
@@ -184,7 +257,8 @@ var _ = Describe("PolarsCluster validation", func() {
 					PodTemplate: &corev1.PodTemplateSpec{
 						Spec: corev1.PodSpec{Containers: []corev1.Container{{Name: componentWorker, Image: testStandInImage}}},
 					},
-					Replicas: 1,
+					MinReplicas: 1,
+					Replicas:    1,
 				},
 			},
 		}
@@ -220,7 +294,8 @@ var _ = Describe("PolarsCluster validation", func() {
 					PodTemplate: &corev1.PodTemplateSpec{
 						Spec: corev1.PodSpec{Containers: []corev1.Container{{Name: componentWorker, Image: testStandInImage}}},
 					},
-					Replicas: 1,
+					MinReplicas: 1,
+					Replicas:    1,
 				},
 			},
 		}

@@ -991,6 +991,16 @@ func (in *WorkerPoolDeclaration) DeepCopyInto(out *WorkerPoolDeclaration) {
 		*out = new(corev1.PodTemplateSpec)
 		(*in).DeepCopyInto(*out)
 	}
+	if in.MaxReplicas != nil {
+		in, out := &in.MaxReplicas, &out.MaxReplicas
+		*out = new(int32)
+		**out = **in
+	}
+	if in.WorkersToDelete != nil {
+		in, out := &in.WorkersToDelete, &out.WorkersToDelete
+		*out = make([]string, len(*in))
+		copy(*out, *in)
+	}
 	if in.HeartBeatInterval != nil {
 		in, out := &in.HeartBeatInterval, &out.HeartBeatInterval
 		*out = new(metav1.Duration)

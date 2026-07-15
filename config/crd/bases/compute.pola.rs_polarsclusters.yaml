@@ -10493,6 +10493,14 @@ spec:
                     description: HeartBeatInterval between workers and the scheduler.
                       Defaults to 5s.
                     type: string
+                  maxReplicas:
+                    format: int32
+                    minimum: 0
+                    type: integer
+                  minReplicas:
+                    format: int32
+                    minimum: 0
+                    type: integer
                   podTemplate:
                     description: PodTemplateSpec describes the data a pod should have
                       when created from a template
@@ -19577,9 +19585,20 @@ spec:
                         - size
                         type: object
                     type: object
+                  workersToDelete:
+                    items:
+                      type: string
+                    type: array
                 required:
+                - minReplicas
                 - replicas
                 type: object
+                x-kubernetes-validations:
+                - message: replicas must be within [minReplicas, maxReplicas]
+                  messageExpression: '''replicas must be within [%d, %d], got %d''.format([self.minReplicas,
+                    self.maxReplicas, self.replicas])'
+                  rule: self.replicas >= self.minReplicas && (!has(self.maxReplicas)
+                    || self.replicas <= self.maxReplicas)
             required:
             - license
             - workerPool
@@ -19696,4 +19715,8 @@ spec:
     served: true
     storage: true
     subresources:
+      scale:
+        labelSelectorPath: .status.workerPool.selector
+        specReplicasPath: .spec.workerPool.replicas
+        statusReplicasPath: .status.workerPool.replicas
       status: {}

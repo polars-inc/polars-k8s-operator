@@ -370,8 +370,10 @@ var _ = Describe("Manager", Ordered, func() {
 		})
 
 		itRecreatesSchedulerOnTemplateChange(busyboxSpecConfig)
+		itReplacesWorkersMarkedForDeletion(busyboxSpecConfig, 2)
 		itScalesTheWorkerPool(busyboxSpecConfig, "up", 3)
 		itScalesTheWorkerPool(busyboxSpecConfig, "down", 1)
+		itScalesViaScaleSubresource(busyboxSpecConfig)
 
 		// This keeps the checked-in sample manifest honest: the raw YAML a
 		// user would apply must stay valid against the CRD schema.
@@ -387,6 +389,13 @@ var _ = Describe("Manager", Ordered, func() {
 				"-f", "config/samples/compute_v1_polarscluster.yaml")
 			_, err = utils.Run(cmd)
 			Expect(err).NotTo(HaveOccurred())
+		})
+
+		It("should reject a WorkerPool whose replicas falls outside [minReplicas, maxReplicas]", func() {
+			By("attempting to create a PolarsCluster whose worker pool replicas is above maxReplicas")
+			err := kubectlApply(polarsClusterManifestWithPoolBounds(clusterNamespace, "e2e-cluster-invalid-replicas", 1, 2, 5))
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("replicas must be within"))
 		})
 
 		It("should garbage-collect owned pods (scheduler and worker) when the PolarsCluster is deleted", func() {
@@ -467,7 +476,9 @@ var _ = Describe("Manager", Ordered, func() {
 			itCreatesAndReadiesSchedulerPod(realImageSpecConfig)
 			itSetsOverallReadyCondition(realImageSpecConfig)
 			itScalesTheWorkerPool(realImageSpecConfig, "up", 2)
+			itReplacesWorkersMarkedForDeletion(realImageSpecConfig, 2)
 			itScalesTheWorkerPool(realImageSpecConfig, "down", 1)
+			itScalesViaScaleSubresource(realImageSpecConfig)
 			itRecreatesSchedulerOnTemplateChange(realImageSpecConfig)
 		})
 	})
@@ -623,6 +634,98 @@ func itScalesTheWorkerPool(cfg sharedSpecConfig, direction string, to int) {
 	})
 }
 
+func itReplacesWorkersMarkedForDeletion(cfg sharedSpecConfig, poolSize int) {
+	It("should honor workersToDelete for targeted pod removal", func() {
+		By("looking up the worker pool's pod selector")
+		var selector string
+		Eventually(func(g Gomega) {
+			var err error
+			selector, err = selectorForWorkerPool(cfg.namespace, cfg.clusterName)
+			g.Expect(err).NotTo(HaveOccurred())
+			g.Expect(selector).NotTo(BeEmpty())
+		}).Should(Succeed())
+
+		By("picking one of the pool's current pods to target for removal")
+		names, err := podNamesForSelector(cfg.namespace, selector)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(names).To(HaveLen(poolSize))
+		victim := names[0]
+
+		By("patching PolarsCluster.spec.workerPool.workersToDelete with that pod's name")
+		cmd := exec.Command("kubectl", "patch", "polarscluster", cfg.clusterName, "-n", cfg.namespace,
+			"--type=merge",
+			"-p", fmt.Sprintf(`{"spec":{"workerPool":{"workersToDelete":["%s"]}}}`, victim))
+		_, err = utils.Run(cmd)
+		Expect(err).NotTo(HaveOccurred())
+
+		By(fmt.Sprintf("verifying the named pod is deleted and replaced, keeping the pool at %d replicas", poolSize))
+		Eventually(func(g Gomega) {
+			names, err := podNamesForSelector(cfg.namespace, selector)
+			g.Expect(err).NotTo(HaveOccurred())
+			g.Expect(names).To(HaveLen(poolSize))
+			g.Expect(names).NotTo(ContainElement(victim))
+		}, cfg.readyTimeout, cfg.pollInterval).Should(Succeed())
+
+		By("verifying the replacement worker becomes ready, restoring the pool's ready replica count")
+		Eventually(func(g Gomega) {
+			cmd := exec.Command("kubectl", "get", "polarscluster", cfg.clusterName, "-n", cfg.namespace,
+				"-o", "jsonpath={.status.workerPool.replicas} {.status.workerPool.readyReplicas}")
+			output, err := utils.Run(cmd)
+			g.Expect(err).NotTo(HaveOccurred())
+			g.Expect(output).To(Equal(fmt.Sprintf("%d %d", poolSize, poolSize)))
+		}, cfg.readyTimeout, cfg.pollInterval).Should(Succeed())
+
+		By("verifying the controller clears workersToDelete once processed")
+		Eventually(func(g Gomega) {
+			cmd := exec.Command("kubectl", "get", "polarscluster", cfg.clusterName, "-n", cfg.namespace,
+				"-o", "jsonpath={.spec.workerPool.workersToDelete}")
+			output, err := utils.Run(cmd)
+			g.Expect(err).NotTo(HaveOccurred())
+			g.Expect(output).To(BeEmpty())
+		}).Should(Succeed())
+	})
+}
+
+func itScalesViaScaleSubresource(cfg sharedSpecConfig) {
+	It("should scale the WorkerPool through the scale subresource", func() {
+		By("scaling up to 2 replicas with kubectl scale")
+		cmd := exec.Command("kubectl", "scale", "polarscluster", cfg.clusterName, "-n", cfg.namespace,
+			"--replicas=2")
+		_, err := utils.Run(cmd)
+		Expect(err).NotTo(HaveOccurred())
+
+		By("verifying PolarsCluster.status.workerPool reflects 2 ready replicas")
+		Eventually(func(g Gomega) {
+			cmd := exec.Command("kubectl", "get", "polarscluster", cfg.clusterName, "-n", cfg.namespace,
+				"-o", "jsonpath={.status.workerPool.replicas} {.status.workerPool.readyReplicas}")
+			output, err := utils.Run(cmd)
+			g.Expect(err).NotTo(HaveOccurred())
+			g.Expect(output).To(Equal("2 2"))
+		}, cfg.readyTimeout, cfg.pollInterval).Should(Succeed())
+
+		By("verifying a scale beyond maxReplicas errors, rejected by the schema's bounds rule")
+		cmd = exec.Command("kubectl", "scale", "polarscluster", cfg.clusterName, "-n", cfg.namespace,
+			"--replicas=5")
+		_, err = utils.Run(cmd)
+		Expect(err).To(HaveOccurred())
+		Expect(err.Error()).To(ContainSubstring("replicas must be within"))
+
+		By("scaling back down to 1 replica with kubectl scale")
+		cmd = exec.Command("kubectl", "scale", "polarscluster", cfg.clusterName, "-n", cfg.namespace,
+			"--replicas=1")
+		_, err = utils.Run(cmd)
+		Expect(err).NotTo(HaveOccurred())
+
+		Eventually(func(g Gomega) {
+			cmd := exec.Command("kubectl", "get", "polarscluster", cfg.clusterName, "-n", cfg.namespace,
+				"-o", "jsonpath={.status.workerPool.replicas} {.status.workerPool.readyReplicas}")
+			output, err := utils.Run(cmd)
+			g.Expect(err).NotTo(HaveOccurred())
+			g.Expect(output).To(Equal("1 1"))
+		}, cfg.readyTimeout, cfg.pollInterval).Should(Succeed())
+	})
+}
+
 func itRecreatesSchedulerOnTemplateChange(cfg sharedSpecConfig) {
 	It("should recreate the scheduler pod when its template changes", func() {
 		schedulerPod := schedulerPodNameForCluster(cfg.clusterName)
@@ -730,7 +833,7 @@ func busyboxPodTemplate(containerName string) corev1.PodTemplateSpec {
 	}
 }
 
-func busyboxPolarsCluster(ns, name string, replicas int32) *computev1.PolarsCluster {
+func busyboxPolarsCluster(ns, name string, minReplicas, maxReplicas, replicas int32) *computev1.PolarsCluster {
 	cluster := newPolarsCluster(ns, name)
 	cluster.Spec = computev1.PolarsClusterSpec{
 		License: computev1.LicenseSpec{
@@ -745,14 +848,19 @@ func busyboxPolarsCluster(ns, name string, replicas int32) *computev1.PolarsClus
 		},
 		WorkerPool: computev1.WorkerPoolDeclaration{
 			PodTemplate: ptr.To(busyboxPodTemplate("worker")),
+			MinReplicas: minReplicas,
+			MaxReplicas: ptr.To(maxReplicas),
 			Replicas:    replicas,
 		},
 	}
 	return cluster
 }
 
+// polarsClusterManifest declares the pool bounds [1, 3] up front: they are
+// static policy the lifecycle specs never touch — scaling only ever moves
+// spec.workerPool.replicas within them.
 func polarsClusterManifest(ns, name string, poolReplicas int) string {
-	cluster := busyboxPolarsCluster(ns, name, int32(poolReplicas))
+	cluster := busyboxPolarsCluster(ns, name, 1, 3, int32(poolReplicas))
 	cluster.Spec.AnonymousResults = &computev1.AnonymousResultsSpec{
 		S3: &computev1.AnonymousResultsS3Spec{Endpoint: anonymousResultsS3Endpoint},
 	}
@@ -762,6 +870,10 @@ func polarsClusterManifest(ns, name string, poolReplicas int) string {
 		},
 	}
 	return mustMarshalManifest(cluster)
+}
+
+func polarsClusterManifestWithPoolBounds(ns, name string, minReplicas, maxReplicas, replicas int) string {
+	return mustMarshalManifest(busyboxPolarsCluster(ns, name, int32(minReplicas), int32(maxReplicas), int32(replicas)))
 }
 
 func realImagePolarsClusterManifest(ns, name string) string {
@@ -796,7 +908,9 @@ func realImagePolarsClusterManifest(ns, name string) string {
 			PodTemplate: schedulerStub,
 		},
 		WorkerPool: computev1.WorkerPoolDeclaration{
-			Replicas: 1,
+			MinReplicas: 1,
+			MaxReplicas: ptr.To(int32(3)),
+			Replicas:    1,
 		},
 	}
 	return mustMarshalManifest(cluster)

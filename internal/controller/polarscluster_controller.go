@@ -74,6 +74,33 @@ func (r *PolarsClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		return ctrl.Result{}, nil
 	}
 
+	if len(cluster.Spec.WorkerPool.WorkersToDelete) > 0 {
+		patchBase := cluster.DeepCopy()
+		for _, workerToDelete := range cluster.Spec.WorkerPool.WorkersToDelete {
+			pod := &corev1.Pod{
+				ObjectMeta: v1.ObjectMeta{
+					Namespace: cluster.Namespace,
+					Name:      workerToDelete,
+				},
+			}
+			if err := r.Delete(ctx, pod); err != nil {
+				if errors.IsNotFound(err) {
+					continue
+				}
+
+				return ctrl.Result{}, err
+			}
+		}
+		cluster.Spec.WorkerPool.WorkersToDelete = []string{}
+		// Optimistic-locked: if workersToDelete was concurrently appended to
+		// since our Get above, this patch conflicts (409) and the reconcile
+		// requeues, instead of silently dropping the new entry via a
+		// whole-array merge patch computed from a stale snapshot.
+		if err := r.Patch(ctx, cluster, client.MergeFromWithOptions(patchBase, client.MergeFromWithOptimisticLock{})); err != nil {
+			return ctrl.Result{}, err
+		}
+	}
+
 	if err := r.reconcileServices(ctx, cluster); err != nil {
 		return ctrl.Result{}, err
 	}
