@@ -1,5 +1,6 @@
-# polars-k8s-operator
-// TODO(user): Add simple overview of use/purpose
+# Polars Kubernetes Operator
+
+Kubernetes operator for managing Polars Clusters
 
 ## Description
 // TODO(user): An in-depth paragraph about your project and overview of use

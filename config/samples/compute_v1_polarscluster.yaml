@@ -4,6 +4,20 @@ metadata:
   labels:
     app.kubernetes.io/name: polars-k8s-operator
     app.kubernetes.io/managed-by: kustomize
-  name: polarscluster-sample
+  name: polars
 spec:
-  # TODO(user): Add fields here
+  acceptEula: true
+  license:
+    onPremEnterprise:
+      # Create this Secret from your Polars on-premises enterprise license:
+      #   kubectl create secret generic license --from-file=license.json=<path to license>
+      secretName: license
+      secretProperty: license.json
+  runtime:
+    composed:
+      dist:
+        repository: polars-on-premises
+        tag: "latest"
+        pullPolicy: IfNotPresent
+  workerPool:
+    replicas: 2

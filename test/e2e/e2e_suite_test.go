@@ -17,7 +17,7 @@ import (
 
 var (
 	// managerImage is the manager image to be built and loaded for testing.
-	managerImage = "example.com/polars-k8s-operator:v0.0.1"
+	managerImage = "polarscloud/polars-k8s-operator:v0.0.1"
 	// shouldCleanupCertManager tracks whether CertManager was installed by this suite.
 	shouldCleanupCertManager = false
 )
@@ -31,7 +31,12 @@ var (
 func TestE2E(t *testing.T) {
 	RegisterFailHandler(Fail)
 	_, _ = fmt.Fprintf(GinkgoWriter, "Starting polars-k8s-operator e2e test suite\n")
-	RunSpecs(t, "e2e suite")
+
+	suiteConfig, reporterConfig := GinkgoConfiguration()
+	if suiteConfig.LabelFilter == "" {
+		suiteConfig.LabelFilter = "!real-image"
+	}
+	RunSpecs(t, "e2e suite", suiteConfig, reporterConfig)
 }
 
 var _ = BeforeSuite(func() {
