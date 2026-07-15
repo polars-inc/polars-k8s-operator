@@ -51,6 +51,14 @@ manifests: controller-gen ## Generate WebhookConfiguration, ClusterRole and Cust
 generate: controller-gen ## Generate code containing DeepCopy, DeepCopyInto, and DeepCopyObject method implementations.
 	"$(CONTROLLER_GEN)" object paths="./..."
 
+.PHONY: api-docs
+api-docs: crd-ref-docs ## Generate CRD API reference documentation into docs/api.md.
+	"$(CRD_REF_DOCS)" \
+		--source-path=./api \
+		--config=docs/crd-ref-docs.yaml \
+		--renderer=markdown \
+		--output-path=docs/api.md
+
 .PHONY: fmt
 fmt: ## Run go fmt against code.
 	go fmt ./...
@@ -200,6 +208,7 @@ CONTROLLER_GEN ?= $(LOCALBIN)/controller-gen
 ENVTEST ?= $(LOCALBIN)/setup-envtest
 GOLANGCI_LINT = $(LOCALBIN)/golangci-lint
 KUBEBUILDER ?= $(LOCALBIN)/kubebuilder
+CRD_REF_DOCS ?= $(LOCALBIN)/crd-ref-docs
 
 ## Tool Versions
 KUSTOMIZE_VERSION ?= v5.8.1
@@ -221,6 +230,8 @@ ENVTEST_K8S_VERSION ?= $(shell v='$(call gomodver,k8s.io/api)'; \
   printf '%s\n' "$$v" | sed -E 's/^v?[0-9]+\.([0-9]+).*/1.\1/')
 
 GOLANGCI_LINT_VERSION ?= v2.12.2
+CRD_REF_DOCS_VERSION ?= v0.3.0
+
 .PHONY: kustomize
 kustomize: $(KUSTOMIZE) ## Download kustomize locally if necessary.
 $(KUSTOMIZE): $(LOCALBIN)
@@ -258,6 +269,11 @@ $(GOLANGCI_LINT): $(LOCALBIN)
 		$(GOLANGCI_LINT) custom --destination $(LOCALBIN) --name golangci-lint-custom && \
 		mv -f $(LOCALBIN)/golangci-lint-custom $(GOLANGCI_LINT); \
 	} || true
+
+.PHONY: crd-ref-docs
+crd-ref-docs: $(CRD_REF_DOCS) ## Download crd-ref-docs locally if necessary.
+$(CRD_REF_DOCS): $(LOCALBIN)
+	$(call go-install-tool,$(CRD_REF_DOCS),github.com/elastic/crd-ref-docs,$(CRD_REF_DOCS_VERSION))
 
 # go-install-tool will 'go install' any package with custom target and name of binary, if it doesn't exist
 # $1 - target path with name of binary

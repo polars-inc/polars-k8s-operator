@@ -70,20 +70,47 @@ spec:
                 type: boolean
               allowAnonymousUsers:
                 default: true
+                description: |-
+                  AllowAnonymousUsers permits queries without a username. When false,
+                  all queries must be sent with a set username.
                 type: boolean
               allowLocalScans:
                 default: false
+                description: |-
+                  AllowLocalScans permits workers to read query inputs from local disk.
+                  Disabling this prevents all local reads; it is not possible to allow
+                  only specific scan locations. Users can alternatively configure scans
+                  that read from object storage. More info:
+                  https://docs.pola.rs/user-guide/io/cloud-storage/#reading-from-cloud-storage
                 type: boolean
               allowLocalSinks:
                 default: true
+                description: |-
+                  AllowLocalSinks permits workers to write query results to local disk.
+                  Disabling this prevents all local writes; it is not possible to allow
+                  only specific sink locations. Users can alternatively configure sinks
+                  that write to object storage. More info:
+                  https://docs.pola.rs/user-guide/io/cloud-storage/#writing-to-cloud-storage
                 type: boolean
               anonymousResults:
+                description: |-
+                  AnonymousResults is where results of queries that don't specify a
+                  result location are stored. Object storage is recommended so results
+                  persist; the compute plane never cleans up anonymous results itself.
                 properties:
                   abs:
+                    description: ABS stores anonymous results in Azure Blob Storage.
                     properties:
                       endpointURL:
+                        description: |-
+                          EndpointURL is the entire Azure Blob Storage URI. If the storage
+                          location requires authentication, provide the credentials in options.
                         type: string
                       options:
+                        description: |-
+                          Options for the Azure Blob Storage location. These correspond to
+                          Object Store's AzureConfigKey. More info:
+                          https://docs.rs/object_store/latest/object_store/azure/enum.AzureConfigKey.html
                         items:
                           description: EnvVar represents an environment variable present
                             in a Container.
@@ -241,15 +268,26 @@ spec:
                           type: object
                         type: array
                       presignDuration:
+                        description: |-
+                          PresignDuration is how long anonymous results are presigned for.
+                          Defaults to 8h.
                         type: string
                     required:
                     - endpointURL
                     type: object
                   gcs:
+                    description: GCS stores anonymous results in Google Cloud Storage.
                     properties:
                       endpointURL:
+                        description: |-
+                          EndpointURL is the entire Google Cloud Storage URI. If the storage
+                          location requires authentication, provide the credentials in options.
                         type: string
                       options:
+                        description: |-
+                          Options for the Google Cloud Storage location. These correspond to
+                          Object Store's GoogleConfigKey. More info:
+                          https://docs.rs/object_store/latest/object_store/gcp/enum.GoogleConfigKey.html
                         items:
                           description: EnvVar represents an environment variable present
                             in a Container.
@@ -407,15 +445,26 @@ spec:
                           type: object
                         type: array
                       presignDuration:
+                        description: |-
+                          PresignDuration is how long anonymous results are presigned for.
+                          Defaults to 8h.
                         type: string
                     required:
                     - endpointURL
                     type: object
                   s3:
+                    description: S3 stores anonymous results in AWS S3.
                     properties:
                       endpoint:
+                        description: |-
+                          Endpoint is the entire S3 URI. If the storage location requires
+                          authentication, provide the credentials in options.
                         type: string
                       options:
+                        description: |-
+                          Options for the S3 storage location. These correspond to Object
+                          Store's AmazonS3ConfigKey. More info:
+                          https://docs.rs/object_store/latest/object_store/aws/enum.AmazonS3ConfigKey.html
                         items:
                           description: EnvVar represents an environment variable present
                             in a Container.
@@ -573,17 +622,21 @@ spec:
                           type: object
                         type: array
                       presignDuration:
+                        description: |-
+                          PresignDuration is how long anonymous results are presigned for.
+                          Defaults to 8h.
                         type: string
                     required:
                     - endpoint
                     type: object
                   sharedFilesystem:
                     description: |-
-                      SharedFilesystemSpec configures a filesystem path on an already-mounted
-                      shared volume (e.g. an NFS or CSI driver mount supplied via the pod
-                      template's volumes/volumeMounts).
+                      SharedFilesystem stores anonymous results on a filesystem path all
+                      workers see. The path must match the location mounted on the client,
+                      since the cluster returns the exact written paths back to the client.
                     properties:
                       path:
+                        description: Path on the shared volume where the data is stored.
                         type: string
                     required:
                     - path
@@ -595,14 +648,27 @@ spec:
                   rule: '[has(self.s3),has(self.abs),has(self.gcs),has(self.sharedFilesystem)].filter(x,x==true).size()
                     == 1'
               checkpoint:
+                description: |-
+                  Checkpoint enables checkpointing of queries: the scheduler
+                  periodically checkpoints completed stages to the configured data
+                  location so queries can resume after failures.
                 properties:
                   data:
+                    description: Data is where checkpoint data is stored.
                     properties:
                       abs:
+                        description: ABS stores checkpoint data in Azure Blob Storage.
                         properties:
                           endpointURL:
+                            description: |-
+                              EndpointURL is the entire Azure Blob Storage URI. If the storage
+                              location requires authentication, provide the credentials in options.
                             type: string
                           options:
+                            description: |-
+                              Options for the Azure Blob Storage location. These correspond to
+                              Object Store's AzureConfigKey. More info:
+                              https://docs.rs/object_store/latest/object_store/azure/enum.AzureConfigKey.html
                             items:
                               description: EnvVar represents an environment variable
                                 present in a Container.
@@ -764,10 +830,18 @@ spec:
                         - endpointURL
                         type: object
                       gcs:
+                        description: GCS stores checkpoint data in Google Cloud Storage.
                         properties:
                           endpointURL:
+                            description: |-
+                              EndpointURL is the entire Google Cloud Storage URI. If the storage
+                              location requires authentication, provide the credentials in options.
                             type: string
                           options:
+                            description: |-
+                              Options for the Google Cloud Storage location. These correspond to
+                              Object Store's GoogleConfigKey. More info:
+                              https://docs.rs/object_store/latest/object_store/gcp/enum.GoogleConfigKey.html
                             items:
                               description: EnvVar represents an environment variable
                                 present in a Container.
@@ -929,10 +1003,18 @@ spec:
                         - endpointURL
                         type: object
                       s3:
+                        description: S3 stores checkpoint data in AWS S3.
                         properties:
                           endpoint:
+                            description: |-
+                              Endpoint is the entire S3 URI. If the storage location requires
+                              authentication, provide the credentials in options.
                             type: string
                           options:
+                            description: |-
+                              Options for the S3 storage location. These correspond to Object
+                              Store's AmazonS3ConfigKey. More info:
+                              https://docs.rs/object_store/latest/object_store/aws/enum.AmazonS3ConfigKey.html
                             items:
                               description: EnvVar represents an environment variable
                                 present in a Container.
@@ -1099,6 +1181,8 @@ spec:
                           workers see. Mounting is the user's responsibility.
                         properties:
                           path:
+                            description: Path on the shared volume where the data
+                              is stored.
                             type: string
                         required:
                         - path
@@ -1111,7 +1195,9 @@ spec:
                         == 1'
                   period:
                     default: 20m
-                    description: Period is the period at which checkpoints are created.
+                    description: |-
+                      Period is the period at which checkpoints are created. Once it has
+                      passed after a stage completed, a checkpoint is created.
                     type: string
                 required:
                 - data
@@ -1127,11 +1213,15 @@ spec:
                   worker pods. Defaults to enabled when unset.
                 properties:
                   enabled:
+                    description: Enabled turns host metrics collection on or off.
                     type: boolean
                 required:
                 - enabled
                 type: object
               imagePullSecrets:
+                description: |-
+                  ImagePullSecrets are references to Secrets in the same namespace to
+                  use for pulling any of the cluster's images.
                 items:
                   description: |-
                     LocalObjectReference contains enough information to let you locate the
@@ -1150,6 +1240,7 @@ spec:
                   x-kubernetes-map-type: atomic
                 type: array
               license:
+                description: License selects how the cluster's Polars license is provided.
                 properties:
                   licenseServer:
                     description: LicenseServer connects to an offline Polars license
@@ -1162,17 +1253,19 @@ spec:
                     - uri
                     type: object
                   onPrem:
+                    description: OnPrem licenses the cluster with Polars workspace
+                      client credentials.
                     properties:
                       clientID:
-                        description: |-
-                          ValueOrSource holds either a literal value or a reference to where the
-                          value can be found (Secret key, ConfigMap key, field, ...).
+                        description: ClientID of the Polars workspace.
                         properties:
                           value:
+                            description: Value is the literal value.
                             type: string
                           valueFrom:
-                            description: EnvVarSource represents a source for the
-                              value of an EnvVar.
+                            description: |-
+                              ValueFrom references the value from a Secret key, ConfigMap key, pod
+                              field, or container resource.
                             properties:
                               configMapKeyRef:
                                 description: Selects a key of a ConfigMap.
@@ -1308,15 +1401,15 @@ spec:
                           rule: '[has(self.value),has(self.valueFrom)].filter(x,x==true).size()
                             == 1'
                       clientSecret:
-                        description: |-
-                          ValueOrSource holds either a literal value or a reference to where the
-                          value can be found (Secret key, ConfigMap key, field, ...).
+                        description: ClientSecret of the Polars workspace.
                         properties:
                           value:
+                            description: Value is the literal value.
                             type: string
                           valueFrom:
-                            description: EnvVarSource represents a source for the
-                              value of an EnvVar.
+                            description: |-
+                              ValueFrom references the value from a Secret key, ConfigMap key, pod
+                              field, or container resource.
                             properties:
                               configMapKeyRef:
                                 description: Selects a key of a ConfigMap.
@@ -1458,20 +1551,21 @@ spec:
                           pod restarts.
                         properties:
                           claimName:
+                            description: ClaimName is the name of the existing PersistentVolumeClaim.
                             type: string
                         required:
                         - claimName
                         type: object
                       workspaceID:
-                        description: |-
-                          ValueOrSource holds either a literal value or a reference to where the
-                          value can be found (Secret key, ConfigMap key, field, ...).
+                        description: WorkspaceID of the Polars workspace.
                         properties:
                           value:
+                            description: Value is the literal value.
                             type: string
                           valueFrom:
-                            description: EnvVarSource represents a source for the
-                              value of an EnvVar.
+                            description: |-
+                              ValueFrom references the value from a Secret key, ConfigMap key, pod
+                              field, or container resource.
                             properties:
                               configMapKeyRef:
                                 description: Selects a key of a ConfigMap.
@@ -1612,6 +1706,9 @@ spec:
                     - workspaceID
                     type: object
                   onPremEnterprise:
+                    description: |-
+                      OnPremEnterprise licenses the cluster from a Secret holding an
+                      On-Prem Enterprise license key; requires acceptEula to be true.
                     properties:
                       secretName:
                         description: SecretName is the name of the Secret containing
@@ -1632,12 +1729,19 @@ spec:
                   rule: '[has(self.onPrem),has(self.onPremEnterprise),has(self.licenseServer)].filter(x,x==true).size()
                     == 1'
               lineage:
+                description: |-
+                  Lineage enables exporting query lineage events to an external
+                  endpoint.
                 properties:
                   transport:
+                    description: Transport is the transport used for lineage export.
                     properties:
                       http:
+                        description: HTTP exports lineage events over HTTP.
                         properties:
                           endpoint:
+                            description: Endpoint is the HTTP endpoint lineage events
+                              are sent to.
                             type: string
                         required:
                         - endpoint
@@ -1650,8 +1754,18 @@ spec:
                 type: object
               logLevel:
                 default: info
+                description: LogLevel is the log verbosity of the scheduler and workers.
+                enum:
+                - "off"
+                - error
+                - warn
+                - info
+                - debug
+                - trace
                 type: string
               observatory:
+                description: Observatory configures the observatory dashboard's metrics
+                  storage.
                 properties:
                   maxMetricsBytesTotal:
                     default: 104857600
@@ -1665,6 +1779,7 @@ spec:
                       claim instead of an emptyDir.
                     properties:
                       claimName:
+                        description: ClaimName is the name of the existing PersistentVolumeClaim.
                         type: string
                     required:
                     - claimName
@@ -1691,9 +1806,8 @@ spec:
                 properties:
                   composed:
                     description: |-
-                      ComposedRuntimeSpec composes the runtime from the Polars distribution image
-                      (copied into an emptyDir by an init container) executed on a Python base
-                      image.
+                      Composed builds the scheduler and worker containers from the Polars
+                      distribution image and a Python base image.
                     properties:
                       dist:
                         description: |-
@@ -1701,12 +1815,19 @@ spec:
                           "polarscloud/polars-on-premises" and tag defaults to spec.version.
                         properties:
                           pullPolicy:
-                            description: PullPolicy describes a policy for if/when
-                              to pull a container image
+                            description: |-
+                              PullPolicy is the image pull policy: one of Always, Never, or
+                              IfNotPresent. Defaults to Always if the tag is "latest", or
+                              IfNotPresent otherwise. More info:
+                              https://kubernetes.io/docs/concepts/containers/images#updating-images
                             type: string
                           repository:
+                            description: |-
+                              Repository is the container image name, without a tag. More info:
+                              https://kubernetes.io/docs/concepts/containers/images
                             type: string
                           tag:
+                            description: Tag is the container image tag.
                             type: string
                         type: object
                       polarsExtras:
@@ -1725,12 +1846,19 @@ spec:
                           "python:3.13.9-slim-bookworm".
                         properties:
                           pullPolicy:
-                            description: PullPolicy describes a policy for if/when
-                              to pull a container image
+                            description: |-
+                              PullPolicy is the image pull policy: one of Always, Never, or
+                              IfNotPresent. Defaults to Always if the tag is "latest", or
+                              IfNotPresent otherwise. More info:
+                              https://kubernetes.io/docs/concepts/containers/images#updating-images
                             type: string
                           repository:
+                            description: |-
+                              Repository is the container image name, without a tag. More info:
+                              https://kubernetes.io/docs/concepts/containers/images
                             type: string
                           tag:
+                            description: Tag is the container image tag.
                             type: string
                         type: object
                     type: object
@@ -1747,8 +1875,9 @@ spec:
                   it is optional when a runtime composes the scheduler container.
                 properties:
                   podTemplate:
-                    description: PodTemplateSpec describes the data a pod should have
-                      when created from a template
+                    description: |-
+                      PodTemplate customizes the scheduler pod; it is merged into the pod
+                      the operator composes.
                     properties:
                       metadata:
                         description: |-
@@ -10280,6 +10409,8 @@ spec:
                         type: object
                     type: object
                   services:
+                    description: Services configures the Services exposing the scheduler's
+                      ports.
                     properties:
                       internal:
                         description: |-
@@ -10289,11 +10420,16 @@ spec:
                           annotations:
                             additionalProperties:
                               type: string
+                            description: |-
+                              Annotations to add to the Service object. Used by some controllers
+                              to set up TLS termination or load balancers.
                             type: object
                           type:
                             default: ClusterIP
-                            description: Service Type string describes ingress methods
-                              for a service
+                            description: |-
+                              Type determines how the Service is exposed: ClusterIP, NodePort, or
+                              LoadBalancer. More info:
+                              https://kubernetes.io/docs/concepts/services-networking/service/#publishing-services-service-types
                             type: string
                         type: object
                       observatory:
@@ -10303,11 +10439,16 @@ spec:
                           annotations:
                             additionalProperties:
                               type: string
+                            description: |-
+                              Annotations to add to the Service object. Used by some controllers
+                              to set up TLS termination or load balancers.
                             type: object
                           type:
                             default: ClusterIP
-                            description: Service Type string describes ingress methods
-                              for a service
+                            description: |-
+                              Type determines how the Service is exposed: ClusterIP, NodePort, or
+                              LoadBalancer. More info:
+                              https://kubernetes.io/docs/concepts/services-networking/service/#publishing-services-service-types
                             type: string
                         type: object
                       scheduler:
@@ -10317,27 +10458,35 @@ spec:
                           annotations:
                             additionalProperties:
                               type: string
+                            description: |-
+                              Annotations to add to the Service object. Used by some controllers
+                              to set up TLS termination or load balancers.
                             type: object
                           type:
                             default: ClusterIP
-                            description: Service Type string describes ingress methods
-                              for a service
+                            description: |-
+                              Type determines how the Service is exposed: ClusterIP, NodePort, or
+                              LoadBalancer. More info:
+                              https://kubernetes.io/docs/concepts/services-networking/service/#publishing-services-service-types
                             type: string
                         type: object
                     type: object
                 type: object
               telemetry:
+                description: Telemetry configures exporting the cluster's OTLP traces
+                  and metrics.
                 properties:
                   otlpEndpoint:
-                    description: |-
-                      ValueOrSource holds either a literal value or a reference to where the
-                      value can be found (Secret key, ConfigMap key, field, ...).
+                    description: OTLPEndpoint is the endpoint to send OTLP traces
+                      and metrics to.
                     properties:
                       value:
+                        description: Value is the literal value.
                         type: string
                       valueFrom:
-                        description: EnvVarSource represents a source for the value
-                          of an EnvVar.
+                        description: |-
+                          ValueFrom references the value from a Secret key, ConfigMap key, pod
+                          field, or container resource.
                         properties:
                           configMapKeyRef:
                             description: Selects a key of a ConfigMap.
@@ -10486,16 +10635,16 @@ spec:
                 pattern: ^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-((?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*)(?:\.(?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*))*))?(?:\+([0-9a-zA-Z-]+(?:\.[0-9a-zA-Z-]+)*))?$
                 type: string
               workerPool:
-                description: WorkerPoolDeclaration defines the desired state of a
-                  PolarsCluster's worker pool.
+                description: WorkerPool declares the cluster's pool of worker pods.
                 properties:
                   heartBeatInterval:
                     description: HeartBeatInterval between workers and the scheduler.
                       Defaults to 5s.
                     type: string
                   podTemplate:
-                    description: PodTemplateSpec describes the data a pod should have
-                      when created from a template
+                    description: |-
+                      PodTemplate customizes the worker pods; it is merged into the pod
+                      the operator composes.
                     properties:
                       metadata:
                         description: |-
@@ -19027,16 +19176,27 @@ spec:
                         type: object
                     type: object
                   replicas:
+                    description: Replicas is the desired number of worker pods.
                     format: int32
                     minimum: 0
                     type: integer
                   shuffleData:
+                    description: ShuffleData is the ephemeral storage for shuffle
+                      data.
                     properties:
                       abs:
+                        description: ABS stores shuffle data in Azure Blob Storage.
                         properties:
                           endpointURL:
+                            description: |-
+                              EndpointURL is the entire Azure Blob Storage URI. If the storage
+                              location requires authentication, provide the credentials in options.
                             type: string
                           options:
+                            description: |-
+                              Options for the Azure Blob Storage location. These correspond to
+                              Object Store's AzureConfigKey. More info:
+                              https://docs.rs/object_store/latest/object_store/azure/enum.AzureConfigKey.html
                             items:
                               description: EnvVar represents an environment variable
                                 present in a Container.
@@ -19195,15 +19355,26 @@ spec:
                               type: object
                             type: array
                           presignDuration:
+                            description: |-
+                              PresignDuration is how long shuffle data is presigned for. Defaults
+                              to 8h.
                             type: string
                         required:
                         - endpointURL
                         type: object
                       gcs:
+                        description: GCS stores shuffle data in Google Cloud Storage.
                         properties:
                           endpointURL:
+                            description: |-
+                              EndpointURL is the entire Google Cloud Storage URI. If the storage
+                              location requires authentication, provide the credentials in options.
                             type: string
                           options:
+                            description: |-
+                              Options for the Google Cloud Storage location. These correspond to
+                              Object Store's GoogleConfigKey. More info:
+                              https://docs.rs/object_store/latest/object_store/gcp/enum.GoogleConfigKey.html
                             items:
                               description: EnvVar represents an environment variable
                                 present in a Container.
@@ -19362,6 +19533,9 @@ spec:
                               type: object
                             type: array
                           presignDuration:
+                            description: |-
+                              PresignDuration is how long shuffle data is presigned for. Defaults
+                              to 8h.
                             type: string
                         required:
                         - endpointURL
@@ -19374,13 +19548,25 @@ spec:
                           volumes/volumeMounts, or volumes injected at admission time).
                         properties:
                           path:
+                            description: |-
+                              Path on local storage where the data is stored. Must correspond to a
+                              volume you mount yourself; when omitted the operator mounts an
+                              emptyDir at a default location.
                             type: string
                         type: object
                       s3:
+                        description: S3 stores shuffle data in AWS S3.
                         properties:
                           endpoint:
+                            description: |-
+                              Endpoint is the entire S3 URI. If the storage location requires
+                              authentication, provide the credentials in options.
                             type: string
                           options:
+                            description: |-
+                              Options for the S3 storage location. These correspond to Object
+                              Store's AmazonS3ConfigKey. More info:
+                              https://docs.rs/object_store/latest/object_store/aws/enum.AmazonS3ConfigKey.html
                             items:
                               description: EnvVar represents an environment variable
                                 present in a Container.
@@ -19539,6 +19725,9 @@ spec:
                               type: object
                             type: array
                           presignDuration:
+                            description: |-
+                              PresignDuration is how long shuffle data is presigned for. Defaults
+                              to 8h.
                             type: string
                         required:
                         - endpoint
@@ -19549,6 +19738,8 @@ spec:
                           see (e.g. an NFS or CSI mount). Mounting is the user's responsibility.
                         properties:
                           path:
+                            description: Path on the shared volume where the data
+                              is stored.
                             type: string
                         required:
                         - path
@@ -19560,18 +19751,30 @@ spec:
                       rule: '[has(self.local),has(self.sharedFilesystem),has(self.s3),has(self.abs),has(self.gcs)].filter(x,x==true).size()
                         == 1'
                   temporaryData:
+                    description: |-
+                      TemporaryData is the ephemeral storage for temporary data used by
+                      Polars (e.g. streaming data). Host-local SSD storage is recommended
+                      for better performance.
                     properties:
                       ephemeralVolumeClaim:
-                        description: EphemeralVolumeClaimSpec configures a per-pod
-                          generic ephemeral volume.
+                        description: |-
+                          EphemeralVolumeClaim stores temporary data on a per-pod generic
+                          ephemeral volume instead of the operator-managed emptyDir.
                         properties:
                           size:
                             anyOf:
                             - type: integer
                             - type: string
+                            description: |-
+                              Size of the volume requested by the claim. More info:
+                              https://kubernetes.io/docs/concepts/storage/persistent-volumes#capacity
                             pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
                             x-kubernetes-int-or-string: true
                           storageClassName:
+                            description: |-
+                              StorageClassName is the name of the StorageClass required by the
+                              claim. More info:
+                              https://kubernetes.io/docs/concepts/storage/persistent-volumes#class-1
                             type: string
                         required:
                         - size
@@ -19668,25 +19871,31 @@ spec:
                 format: int64
                 type: integer
               scheduler:
-                description: SchedulerStatus is the observed state of a PolarsCluster's
-                  scheduler.
+                description: Scheduler is the observed state of the scheduler.
                 properties:
                   ready:
+                    description: Ready reports whether the scheduler pod is Ready.
                     type: boolean
                 required:
                 - ready
                 type: object
               workerPool:
-                description: WorkerPoolStatus is the observed state of a PolarsCluster's
-                  worker pool.
+                description: WorkerPool is the observed state of the worker pool.
                 properties:
                   readyReplicas:
+                    description: ReadyReplicas is the number of worker pods that are
+                      Ready.
                     format: int32
                     type: integer
                   replicas:
+                    description: Replicas is the number of non-terminating worker
+                      pods.
                     format: int32
                     type: integer
                   selector:
+                    description: |-
+                      Selector is the label selector matching the pool's worker pods, in
+                      string form.
                     type: string
                 type: object
             type: object
