@@ -1,0 +1,44 @@
+# Pin the worker pool to dedicated nodes, sized to what's actually
+# available after Kubernetes' system reservations (e.g. 3x m5.xlarge:
+# 4 vCPU/16GiB nominal -> ~3770m CPU / ~14.31Gi available).
+apiVersion: compute.pola.rs/v1
+kind: PolarsCluster
+metadata:
+  name: polars-dedicated-nodes
+spec:
+  acceptEula: true
+  license:
+    onPremEnterprise:
+      secretName: license
+      secretProperty: license.json
+  runtime:
+    composed: {}
+  workerPool:
+    replicas: 3
+    podTemplate:
+      spec:
+        nodeSelector:
+          kubernetes.io/e2e-az-name: e2e-az1
+        tolerations:
+          - key: "dedicated"
+            operator: "Equal"
+            value: "polars"
+            effect: "NoSchedule"
+        affinity:
+          nodeAffinity:
+            requiredDuringSchedulingIgnoredDuringExecution:
+              nodeSelectorTerms:
+                - matchExpressions:
+                    - key: kubernetes.io/e2e-az-name
+                      operator: In
+                      values:
+                        - e2e-az1
+        containers:
+          - name: worker
+            resources:
+              requests:
+                cpu: "3770m"
+                memory: "14.31Gi"
+              limits:
+                cpu: "3770m"
+                memory: "14.31Gi"

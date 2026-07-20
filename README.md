@@ -3,7 +3,19 @@
 Kubernetes operator for managing Polars Clusters
 
 ## Description
-// TODO(user): An in-depth paragraph about your project and overview of use
+
+This operator manages `PolarsCluster` custom resources, each running a
+[Polars On-Premises](https://docs.pola.rs/polars-on-premises/) cluster
+(scheduler + worker pool) on Kubernetes. It composes the scheduler/worker
+Deployments, Services, licensing, and storage config from a single CR.
+
+See `config/samples/` for runnable examples, and [docs/api.md](docs/api.md) for the full field reference.
+
+## API Reference
+
+Generated reference documentation for the `PolarsCluster` custom resource lives in
+[docs/api.md](docs/api.md). It is generated from the Go types in `api/v1` — after
+changing them, run `make api-docs` and commit the result (CI fails on stale docs).
 
 ## Getting Started
 
@@ -40,10 +52,17 @@ make deploy IMG=<some-registry>/polars-k8s-operator:tag
 privileges or be logged in as admin.
 
 **Create instances of your solution**
-You can apply the samples (examples) from the config/sample:
+Apply the quickstart sample (On-Prem Enterprise license) from `config/samples`:
 
 ```sh
 kubectl apply -k config/samples/
+```
+
+Further standalone examples live in `config/samples/` — apply at most one at
+a time (each creates its own scheduler + worker pool):
+
+```sh
+kubectl apply -f config/samples/<file>.yaml
 ```
 
 >**NOTE**: Ensure that the samples has default values to test it out.

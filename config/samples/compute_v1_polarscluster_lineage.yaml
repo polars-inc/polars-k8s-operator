@@ -1,0 +1,20 @@
+# Export OpenLineage events to a collector (e.g. Marquez) for query
+# lineage tracking. See https://docs.pola.rs/polars-on-premises/integrations/openlineage/
+apiVersion: compute.pola.rs/v1
+kind: PolarsCluster
+metadata:
+  name: polars-lineage
+spec:
+  acceptEula: true
+  license:
+    onPremEnterprise:
+      secretName: license
+      secretProperty: license.json
+  runtime:
+    composed: {}
+  lineage:
+    transport:
+      http:
+        endpoint: "http://marquez.default.svc.cluster.local:5000"
+  workerPool:
+    replicas: 2

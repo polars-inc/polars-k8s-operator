@@ -1,0 +1,65 @@
+apiVersion: compute.pola.rs/v1
+kind: PolarsCluster
+metadata:
+  name: polars-selfserve
+spec:
+  license:
+    onPrem:
+      # Create this Secret from your Polars workspace's service account
+      # credentials (Workspace settings > Service accounts):
+      #   kubectl create secret generic polars-workspace \
+      #     --from-literal=clientID=<client id> \
+      #     --from-literal=clientSecret=<client secret> \
+      #     --from-literal=workspaceID=<workspace id>
+      clientID:
+        valueFrom:
+          secretKeyRef:
+            name: polars-workspace
+            key: clientID
+      clientSecret:
+        valueFrom:
+          secretKeyRef:
+            name: polars-workspace
+            key: clientSecret
+      workspaceID:
+        valueFrom:
+          secretKeyRef:
+            name: polars-workspace
+            key: workspaceID
+  runtime:
+    composed: {}
+  telemetry:
+    otlpEndpoint:
+      value: "http://otel-collector.observability:4317"
+  anonymousResults:
+    s3:
+      endpoint: "s3://polars-results/anonymous"
+  scheduler:
+    services:
+      scheduler:
+        type: LoadBalancer
+    podTemplate:
+      spec:
+        containers:
+        - name: scheduler
+          resources:
+            requests:
+              cpu: "500m"
+              memory: "1Gi"
+            limits:
+              memory: "1Gi"
+  workerPool:
+    replicas: 4
+    shuffleData:
+      s3:
+        endpoint: "s3://polars-shuffle/data"
+    podTemplate:
+      spec:
+        containers:
+        - name: worker
+          resources:
+            requests:
+              cpu: "2"
+              memory: "4Gi"
+            limits:
+              memory: "4Gi"

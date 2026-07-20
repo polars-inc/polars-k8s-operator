@@ -1,0 +1,24 @@
+# The observatory stores profiling data in a SQLite file; by default it's
+# on an emptyDir and lost on scheduler pod restart. Point it at an existing
+# PersistentVolumeClaim (ReadWriteOnce — the observatory needs exclusive
+# access) to persist profiling data across restarts. The operator does not
+# create the claim; provision it separately first.
+apiVersion: compute.pola.rs/v1
+kind: PolarsCluster
+metadata:
+  name: polars-observatory
+spec:
+  acceptEula: true
+  license:
+    onPremEnterprise:
+      secretName: license
+      secretProperty: license.json
+  runtime:
+    composed: {}
+  observatory:
+    # ~50 bytes/node/second of host metrics retained; e.g. 3 nodes x 1h = 3*50*3600.
+    maxMetricsBytesTotal: 540000
+    persistentVolumeClaim:
+      claimName: polars-observatory-data
+  workerPool:
+    replicas: 3

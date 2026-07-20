@@ -1,0 +1,24 @@
+# By default the scheduler and observatory are only reachable inside the
+# cluster (ClusterIP). Switch to LoadBalancer (recommended, with TLS
+# termination via the annotations your ingress/LB controller expects) or
+# NodePort to reach them from outside the cluster.
+apiVersion: compute.pola.rs/v1
+kind: PolarsCluster
+metadata:
+  name: polars-expose-scheduler
+spec:
+  acceptEula: true
+  license:
+    onPremEnterprise:
+      secretName: license
+      secretProperty: license.json
+  runtime:
+    composed: {}
+  scheduler:
+    services:
+      scheduler:
+        type: LoadBalancer
+      observatory:
+        type: LoadBalancer
+  workerPool:
+    replicas: 2

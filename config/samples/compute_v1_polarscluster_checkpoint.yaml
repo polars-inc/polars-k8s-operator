@@ -1,0 +1,35 @@
+# Checkpointing periodically saves completed query stages so long-running
+# queries can resume after a failure instead of restarting from scratch.
+# The checkpoint location must be durable and shared across all workers —
+# object storage or a shared filesystem, never "local". Shown here for
+# AWS S3 — checkpoint.data.abs / .gcs follow the same shape.
+apiVersion: compute.pola.rs/v1
+kind: PolarsCluster
+metadata:
+  name: polars-checkpoint
+spec:
+  acceptEula: true
+  license:
+    onPremEnterprise:
+      secretName: license
+      secretProperty: license.json
+  runtime:
+    composed: {}
+  checkpoint:
+    period: "5m"
+    data:
+      s3:
+        endpoint: "s3://my-storage-location/path/to/dir"
+        options:
+          - name: aws_access_key_id
+            valueFrom:
+              secretKeyRef:
+                name: my-s3-secret
+                key: accessKeyId
+          - name: aws_secret_access_key
+            valueFrom:
+              secretKeyRef:
+                name: my-s3-secret
+                key: secretAccessKey
+  workerPool:
+    replicas: 2

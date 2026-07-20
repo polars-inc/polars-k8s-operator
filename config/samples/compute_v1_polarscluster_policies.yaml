@@ -1,0 +1,20 @@
+# Cluster-wide policy toggles: require queries to carry a username (deny
+# anonymous users), and turn off per-node host metrics collection.
+apiVersion: compute.pola.rs/v1
+kind: PolarsCluster
+metadata:
+  name: polars-policies
+spec:
+  acceptEula: true
+  license:
+    onPremEnterprise:
+      secretName: license
+      secretProperty: license.json
+  runtime:
+    composed: {}
+  logLevel: info
+  allowAnonymousUsers: false
+  hostMetrics:
+    enabled: false
+  workerPool:
+    replicas: 2
