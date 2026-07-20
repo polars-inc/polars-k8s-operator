@@ -11,17 +11,21 @@ spec:
   # runtime.composed.dist.tag overrides it.
   version: "latest"
   license:
-    onPremEnterprise:
-      # Create this Secret from your Polars on-premises enterprise license:
-      #   kubectl create secret generic license --from-file=license.json=<path to license>
-      secretName: license
-      secretProperty: license.json
+    licenseServer:
+      uri: https://license-server.default:50051
   runtime:
     composed:
       dist:
         repository: polars-on-premises
         pullPolicy: IfNotPresent
   workerPool:
-    minReplicas: 1
+    podTemplate:
+      spec:
+        containers:
+          - name: worker
+            resources:
+              limits:
+                cpu: 1
+    minReplicas: 0
     maxReplicas: 3
-    replicas: 2
+    replicas: 0

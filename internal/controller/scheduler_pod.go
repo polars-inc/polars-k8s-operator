@@ -53,6 +53,7 @@ func BuildSchedulerPodTemplate(cluster *computev1.PolarsCluster) (corev1.Pod, er
 	applyPodLabels(&pod, cluster, componentScheduler)
 	pod.Namespace = cluster.Namespace
 	pod.Name = schedulerPodName(cluster)
+	pod.Spec.ServiceAccountName = schedulerServiceAccountName(cluster)
 
 	return pod, nil
 }
@@ -68,6 +69,10 @@ func computedSchedulerPodSpec(cluster *computev1.PolarsCluster, containerName st
 	scheduler := cublet.Section("scheduler")
 	staticLeader := cublet.Section("static_leader")
 	observatory := cublet.Section("observatory")
+	scaling := cublet.Section("scaling").Section("kubernetes")
+
+	scaling.String("name", cluster.Name)
+	scaling.String("namespace", cluster.Namespace)
 
 	scheduler.Bool("enabled", true)
 	cublet.String("cluster_id", resolveClusterID(cluster))
@@ -90,6 +95,9 @@ func computedSchedulerPodSpec(cluster *computev1.PolarsCluster, containerName st
 	if hostMetricsDisabled(cluster) {
 		monitoring.Section("host_metrics").Bool("enabled", false)
 	}
+
+	scheduler.Section("anonymous_result_location").Section("local").String("path", "/tmp")
+
 	scheduler.Bool("allow_local_sinks", spec.AllowLocalSinks)
 	scheduler.Bool("allow_local_scans", spec.AllowLocalScans)
 	scheduler.Bool("deny_anonymous_users", !spec.AllowAnonymousUsers)
