@@ -53,6 +53,7 @@ func BuildSchedulerPodTemplate(cluster *computev1.PolarsCluster) (corev1.Pod, er
 	applyPodLabels(&pod, cluster, componentScheduler)
 	pod.Namespace = cluster.Namespace
 	pod.Name = schedulerPodName(cluster)
+	pod.Spec.ServiceAccountName = resolveServiceAccountName(schedulerServiceAccountSpec(cluster), schedulerServiceAccountName(cluster))
 
 	return pod, nil
 }

@@ -525,3 +525,22 @@ func TestBuildSchedulerPodTemplate_LogLevelDefault(t *testing.T) {
 	logLevel, _ = findEnv(result.Spec.Containers[0].Env, "PLC_LOG_LEVEL")
 	g.Expect(logLevel.Value).To(Equal("warn"))
 }
+
+func TestBuildSchedulerPodTemplate_ServiceAccountName(t *testing.T) {
+	g := NewWithT(t)
+
+	cluster := schedulerCluster(corev1.Container{})
+	result, err := BuildSchedulerPodTemplate(cluster)
+	g.Expect(err).NotTo(HaveOccurred())
+	g.Expect(result.Spec.ServiceAccountName).To(Equal(defaultServiceAccountName))
+
+	cluster.Spec.Scheduler.ServiceAccount = &computev1.ServiceAccountSpec{Create: true}
+	result, err = BuildSchedulerPodTemplate(cluster)
+	g.Expect(err).NotTo(HaveOccurred())
+	g.Expect(result.Spec.ServiceAccountName).To(Equal(testClusterName + "-scheduler"))
+
+	cluster.Spec.Scheduler.ServiceAccount = &computev1.ServiceAccountSpec{Name: testExistingServiceAccountName}
+	result, err = BuildSchedulerPodTemplate(cluster)
+	g.Expect(err).NotTo(HaveOccurred())
+	g.Expect(result.Spec.ServiceAccountName).To(Equal(testExistingServiceAccountName))
+}

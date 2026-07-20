@@ -273,3 +273,93 @@ var _ = Describe("PolarsCluster validation", func() {
 		Expect(err.Error()).To(ContainSubstring("spec.version"))
 	})
 })
+
+var _ = Describe("PolarsCluster ServiceAccount reconciliation", func() {
+	licenseSpec := computev1.LicenseSpec{
+		OnPrem: &computev1.LicenseOnPremSpec{
+			ClientID: computev1.ValueOrSource{ValueFrom: &corev1.EnvVarSource{SecretKeyRef: &corev1.SecretKeySelector{
+				LocalObjectReference: corev1.LocalObjectReference{Name: licenseSecretName},
+				Key:                  testClientIDKey,
+			}}},
+			ClientSecret: computev1.ValueOrSource{ValueFrom: &corev1.EnvVarSource{SecretKeyRef: &corev1.SecretKeySelector{
+				LocalObjectReference: corev1.LocalObjectReference{Name: licenseSecretName},
+				Key:                  testClientSecretKey,
+			}}},
+			WorkspaceID: computev1.ValueOrSource{ValueFrom: &corev1.EnvVarSource{SecretKeyRef: &corev1.SecretKeySelector{
+				LocalObjectReference: corev1.LocalObjectReference{Name: licenseSecretName},
+				Key:                  testWorkspaceIDKey,
+			}}},
+		},
+	}
+
+	It("should create and own the ServiceAccount when create is true", func() {
+		ctx := context.Background()
+		name := types.NamespacedName{Name: "sa-create", Namespace: validationNamespace}
+		cluster := &computev1.PolarsCluster{
+			ObjectMeta: metav1.ObjectMeta{Name: name.Name, Namespace: name.Namespace},
+			Spec: computev1.PolarsClusterSpec{
+				License: licenseSpec,
+				Scheduler: &computev1.SchedulerSpec{
+					ServiceAccount: &computev1.ServiceAccountSpec{Create: true},
+					PodTemplate: &corev1.PodTemplateSpec{
+						Spec: corev1.PodSpec{Containers: []corev1.Container{{Name: componentScheduler, Image: testStandInImage}}},
+					},
+				},
+				WorkerPool: computev1.WorkerPoolDeclaration{
+					ServiceAccount: &computev1.ServiceAccountSpec{Create: true},
+					PodTemplate: &corev1.PodTemplateSpec{
+						Spec: corev1.PodSpec{Containers: []corev1.Container{{Name: componentWorker, Image: testStandInImage}}},
+					},
+					Replicas: 1,
+				},
+			},
+		}
+		Expect(k8sClient.Create(ctx, cluster)).To(Succeed())
+		defer func() { _ = k8sClient.Delete(ctx, cluster) }()
+
+		reconciler := &PolarsClusterReconciler{Client: k8sClient, Scheme: k8sClient.Scheme()}
+		_, err := reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: name})
+		Expect(err).NotTo(HaveOccurred())
+
+		for _, saName := range []string{name.Name + "-scheduler", name.Name + "-worker"} {
+			var sa corev1.ServiceAccount
+			Expect(k8sClient.Get(ctx, types.NamespacedName{Name: saName, Namespace: name.Namespace}, &sa)).To(Succeed())
+			Expect(sa.OwnerReferences).To(HaveLen(1))
+			Expect(sa.OwnerReferences[0].Kind).To(Equal("PolarsCluster"))
+		}
+	})
+
+	It("should not create a ServiceAccount when unset", func() {
+		ctx := context.Background()
+		name := types.NamespacedName{Name: "sa-default", Namespace: validationNamespace}
+		cluster := &computev1.PolarsCluster{
+			ObjectMeta: metav1.ObjectMeta{Name: name.Name, Namespace: name.Namespace},
+			Spec: computev1.PolarsClusterSpec{
+				License: licenseSpec,
+				Scheduler: &computev1.SchedulerSpec{
+					PodTemplate: &corev1.PodTemplateSpec{
+						Spec: corev1.PodSpec{Containers: []corev1.Container{{Name: componentScheduler, Image: testStandInImage}}},
+					},
+				},
+				WorkerPool: computev1.WorkerPoolDeclaration{
+					PodTemplate: &corev1.PodTemplateSpec{
+						Spec: corev1.PodSpec{Containers: []corev1.Container{{Name: componentWorker, Image: testStandInImage}}},
+					},
+					Replicas: 1,
+				},
+			},
+		}
+		Expect(k8sClient.Create(ctx, cluster)).To(Succeed())
+		defer func() { _ = k8sClient.Delete(ctx, cluster) }()
+
+		reconciler := &PolarsClusterReconciler{Client: k8sClient, Scheme: k8sClient.Scheme()}
+		_, err := reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: name})
+		Expect(err).NotTo(HaveOccurred())
+
+		for _, saName := range []string{name.Name + "-scheduler", name.Name + "-worker"} {
+			var sa corev1.ServiceAccount
+			err := k8sClient.Get(ctx, types.NamespacedName{Name: saName, Namespace: name.Namespace}, &sa)
+			Expect(errors.IsNotFound(err)).To(BeTrue(), "expected no ServiceAccount %s to be created", saName)
+		}
+	})
+})

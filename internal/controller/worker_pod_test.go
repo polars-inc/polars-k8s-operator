@@ -442,3 +442,22 @@ func TestBuildWorkerPodTemplate_LogLevelDefault(t *testing.T) {
 	g.Expect(ok).To(BeTrue())
 	g.Expect(logLevel.Value).To(Equal("info"))
 }
+
+func TestBuildWorkerPodTemplate_ServiceAccountName(t *testing.T) {
+	g := NewWithT(t)
+
+	cluster := polarsCluster(corev1.Container{})
+	result, err := BuildWorkerPodTemplate(cluster)
+	g.Expect(err).NotTo(HaveOccurred())
+	g.Expect(result.Spec.ServiceAccountName).To(Equal(defaultServiceAccountName))
+
+	cluster.Spec.WorkerPool.ServiceAccount = &computev1.ServiceAccountSpec{Create: true}
+	result, err = BuildWorkerPodTemplate(cluster)
+	g.Expect(err).NotTo(HaveOccurred())
+	g.Expect(result.Spec.ServiceAccountName).To(Equal(testClusterName + "-worker"))
+
+	cluster.Spec.WorkerPool.ServiceAccount = &computev1.ServiceAccountSpec{Name: testExistingServiceAccountName}
+	result, err = BuildWorkerPodTemplate(cluster)
+	g.Expect(err).NotTo(HaveOccurred())
+	g.Expect(result.Spec.ServiceAccountName).To(Equal(testExistingServiceAccountName))
+}

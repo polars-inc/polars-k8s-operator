@@ -388,6 +388,28 @@ type SchedulerSpec struct {
 	// the operator composes.
 	// +optional
 	PodTemplate *v1.PodTemplateSpec `json:"podTemplate,omitempty"`
+
+	// ServiceAccount configures the ServiceAccount the scheduler pod runs
+	// as. Defaults to the namespace's default ServiceAccount when unset.
+	// +optional
+	ServiceAccount *ServiceAccountSpec `json:"serviceAccount,omitempty"`
+}
+
+// ServiceAccountSpec configures the ServiceAccount a pod runs as.
+type ServiceAccountSpec struct {
+	// Create indicates whether the operator should create and own this
+	// ServiceAccount. When false, Name must reference a ServiceAccount that
+	// already exists in the cluster's namespace; the operator will not
+	// create or manage it.
+	// +optional
+	Create bool `json:"create,omitempty"`
+
+	// Name of the ServiceAccount. When Create is true and Name is empty, it
+	// defaults to "<cluster>-scheduler" / "<cluster>-worker". When Create is
+	// false and Name is empty, it defaults to "default" (the namespace's
+	// default ServiceAccount).
+	// +optional
+	Name string `json:"name,omitempty"`
 }
 
 // SchedulerServicesSpec configures the Services exposing the scheduler's
@@ -428,6 +450,11 @@ type WorkerPoolDeclaration struct {
 	// the operator composes.
 	// +optional
 	PodTemplate *v1.PodTemplateSpec `json:"podTemplate,omitempty"`
+
+	// ServiceAccount configures the ServiceAccount the worker pods run as.
+	// Defaults to the namespace's default ServiceAccount when unset.
+	// +optional
+	ServiceAccount *ServiceAccountSpec `json:"serviceAccount,omitempty"`
 
 	// Replicas is the desired number of worker pods.
 	// +kubebuilder:validation:Minimum=0

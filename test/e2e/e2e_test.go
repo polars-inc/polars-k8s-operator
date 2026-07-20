@@ -337,6 +337,22 @@ var _ = Describe("Manager", Ordered, func() {
 			Expect(checkpointURL).To(Equal(checkpointDataS3Endpoint))
 		})
 
+		It("should default the scheduler and worker pods to the namespace's default ServiceAccount when serviceAccount is unset", func() {
+			schedulerSA, err := podServiceAccountName(clusterNamespace, schedulerPodNameForCluster(e2ePolarsClusterName))
+			Expect(err).NotTo(HaveOccurred())
+			Expect(schedulerSA).To(Equal("default"))
+
+			selector, err := selectorForWorkerPool(clusterNamespace, e2ePolarsClusterName)
+			Expect(err).NotTo(HaveOccurred())
+			names, err := podNamesForSelector(clusterNamespace, selector)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(names).NotTo(BeEmpty())
+
+			workerSA, err := podServiceAccountName(clusterNamespace, names[0])
+			Expect(err).NotTo(HaveOccurred())
+			Expect(workerSA).To(Equal("default"))
+		})
+
 		itSetsOverallReadyCondition(busyboxSpecConfig)
 
 		It("should create the scheduler, internal, and observatory Services", func() {
@@ -434,6 +450,66 @@ var _ = Describe("Manager", Ordered, func() {
 				_, err := utils.Run(cmd)
 				g.Expect(err).To(HaveOccurred())
 			}, 3*time.Minute, time.Second).Should(Succeed())
+		})
+
+		It("should create and own the scheduler's ServiceAccount, and reuse an existing worker ServiceAccount without owning it", func() {
+			By("creating the worker's pre-existing ServiceAccount")
+			cmd := exec.Command("kubectl", "create", "serviceaccount", existingWorkerServiceAccountName, "-n", clusterNamespace)
+			_, err := utils.Run(cmd)
+			Expect(err).NotTo(HaveOccurred())
+
+			By("creating a PolarsCluster with scheduler.serviceAccount.create=true and workerPool.serviceAccount.name set to the existing ServiceAccount")
+			Expect(kubectlApply(serviceAccountPolarsClusterManifest(clusterNamespace, serviceAccountE2EClusterName))).To(Succeed())
+
+			schedulerPod := schedulerPodNameForCluster(serviceAccountE2EClusterName)
+			schedulerSAName := serviceAccountE2EClusterName + "-scheduler"
+
+			By("verifying the operator created and owns the scheduler's ServiceAccount")
+			Eventually(func(g Gomega) {
+				cmd := exec.Command("kubectl", "get", "serviceaccount", schedulerSAName, "-n", clusterNamespace,
+					"-o", "jsonpath={.metadata.ownerReferences[0].kind} {.metadata.ownerReferences[0].name}")
+				output, err := utils.Run(cmd)
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(output).To(Equal(fmt.Sprintf("PolarsCluster %s", serviceAccountE2EClusterName)))
+			}, 2*time.Minute, time.Second).Should(Succeed())
+
+			By("verifying the scheduler pod runs as the created ServiceAccount")
+			Eventually(func(g Gomega) {
+				saName, err := podServiceAccountName(clusterNamespace, schedulerPod)
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(saName).To(Equal(schedulerSAName))
+			}, 2*time.Minute, time.Second).Should(Succeed())
+
+			By("verifying the worker pod runs as the pre-existing ServiceAccount")
+			Eventually(func(g Gomega) {
+				selector, err := selectorForWorkerPool(clusterNamespace, serviceAccountE2EClusterName)
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(selector).NotTo(BeEmpty())
+
+				names, err := podNamesForSelector(clusterNamespace, selector)
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(names).NotTo(BeEmpty())
+
+				saName, err := podServiceAccountName(clusterNamespace, names[0])
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(saName).To(Equal(existingWorkerServiceAccountName))
+			}, 2*time.Minute, time.Second).Should(Succeed())
+
+			By("verifying the operator left the pre-existing worker ServiceAccount unowned")
+			cmd = exec.Command("kubectl", "get", "serviceaccount", existingWorkerServiceAccountName, "-n", clusterNamespace,
+				"-o", "jsonpath={.metadata.ownerReferences}")
+			output, err := utils.Run(cmd)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(strings.TrimSpace(output)).To(BeEmpty())
+
+			By("cleaning up the PolarsCluster and the pre-existing worker ServiceAccount")
+			cmd = exec.Command("kubectl", "delete", "polarscluster", serviceAccountE2EClusterName, "-n", clusterNamespace)
+			_, err = utils.Run(cmd)
+			Expect(err).NotTo(HaveOccurred())
+
+			cmd = exec.Command("kubectl", "delete", "serviceaccount", existingWorkerServiceAccountName, "-n", clusterNamespace)
+			_, err = utils.Run(cmd)
+			Expect(err).NotTo(HaveOccurred())
 		})
 
 		Context("Real polars-on-premises image", Label("real-image"), func() {
@@ -682,6 +758,9 @@ const realImageLicenseSecretKey = "license.json"
 const anonymousResultsS3Endpoint = "s3://polars-e2e-anonymous-results/results"
 const checkpointDataS3Endpoint = "s3://polars-e2e-checkpoint-data/checkpoints"
 
+const serviceAccountE2EClusterName = "e2e-cluster-serviceaccount"
+const existingWorkerServiceAccountName = "e2e-existing-worker-sa"
+
 func mustMarshalManifest(cluster *computev1.PolarsCluster) string {
 	out, err := yaml.Marshal(cluster)
 	if err != nil {
@@ -764,6 +843,13 @@ func polarsClusterManifest(ns, name string, poolReplicas int) string {
 	return mustMarshalManifest(cluster)
 }
 
+func serviceAccountPolarsClusterManifest(ns, name string) string {
+	cluster := busyboxPolarsCluster(ns, name, 1)
+	cluster.Spec.Scheduler.ServiceAccount = &computev1.ServiceAccountSpec{Create: true}
+	cluster.Spec.WorkerPool.ServiceAccount = &computev1.ServiceAccountSpec{Name: existingWorkerServiceAccountName}
+	return mustMarshalManifest(cluster)
+}
+
 func realImagePolarsClusterManifest(ns, name string) string {
 	// The scheduler podTemplate only names the container (matching the one
 	// the operator composes, so they merge): it gives the shared
@@ -824,6 +910,12 @@ func schedulerPodNameForCluster(clusterName string) string {
 func containerEnvValue(ns, podName, envName string) (string, error) {
 	cmd := exec.Command("kubectl", "get", "pod", podName, "-n", ns,
 		"-o", fmt.Sprintf("jsonpath={.spec.containers[0].env[?(@.name=='%s')].value}", envName))
+	return utils.Run(cmd)
+}
+
+func podServiceAccountName(ns, podName string) (string, error) {
+	cmd := exec.Command("kubectl", "get", "pod", podName, "-n", ns,
+		"-o", "jsonpath={.spec.serviceAccountName}")
 	return utils.Run(cmd)
 }
 

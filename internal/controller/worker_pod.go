@@ -52,6 +52,7 @@ func BuildWorkerPodTemplate(cluster *computev1.PolarsCluster) (corev1.Pod, error
 	pod.Namespace = cluster.Namespace
 	pod.Name = ""
 	pod.GenerateName = fmt.Sprintf("%s-worker-", cluster.Name)
+	pod.Spec.ServiceAccountName = resolveServiceAccountName(workerServiceAccountSpec(cluster), workerServiceAccountName(cluster))
 
 	return pod, nil
 }
