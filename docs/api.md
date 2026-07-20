@@ -474,7 +474,6 @@ _Appears in:_
 | `allowLocalSinks` _boolean_ | AllowLocalSinks permits workers to write query results to local disk.<br />Disabling this prevents all local writes; it is not possible to allow<br />only specific sink locations. Users can alternatively configure sinks<br />that write to object storage. More info:<br />https://docs.pola.rs/user-guide/io/cloud-storage/#writing-to-cloud-storage | true |  |
 | `allowLocalScans` _boolean_ | AllowLocalScans permits workers to read query inputs from local disk.<br />Disabling this prevents all local reads; it is not possible to allow<br />only specific scan locations. Users can alternatively configure scans<br />that read from object storage. More info:<br />https://docs.pola.rs/user-guide/io/cloud-storage/#reading-from-cloud-storage | false |  |
 | `allowAnonymousUsers` _boolean_ | AllowAnonymousUsers permits queries without a username. When false,<br />all queries must be sent with a set username. | true |  |
-| `requireFreeWorkers` _[RequireFreeWorkersSpec](#requirefreeworkersspec)_ | RequireFreeWorkers makes the scheduler wait for free workers before<br />starting query execution. A nil count defaults to the worker pool's<br />replica count. |  | Optional: \{\} <br /> |
 | `anonymousResults` _[AnonymousResultsSpec](#anonymousresultsspec)_ | AnonymousResults is where results of queries that don't specify a<br />result location are stored. Object storage is recommended so results<br />persist; the compute plane never cleans up anonymous results itself. |  | ExactlyOneOf: [s3 abs gcs sharedFilesystem] <br />Optional: \{\} <br /> |
 | `checkpoint` _[CheckpointSpec](#checkpointspec)_ | Checkpoint enables checkpointing of queries: the scheduler<br />periodically checkpoints completed stages to the configured data<br />location so queries can resume after failures. |  | Optional: \{\} <br /> |
 | `lineage` _[LineageSpec](#lineagespec)_ | Lineage enables exporting query lineage events to an external<br />endpoint. |  | Optional: \{\} <br /> |
@@ -501,23 +500,6 @@ _Appears in:_
 | `observedGeneration` _integer_ | ObservedGeneration is the most recent spec generation reflected by<br />this status. Clients should treat the status as stale while it trails<br />metadata.generation. |  | Optional: \{\} <br /> |
 | `scheduler` _[SchedulerStatus](#schedulerstatus)_ | Scheduler is the observed state of the scheduler. |  | Optional: \{\} <br /> |
 | `workerPool` _[WorkerPoolStatus](#workerpoolstatus)_ | WorkerPool is the observed state of the worker pool. |  | Optional: \{\} <br /> |
-
-
-#### RequireFreeWorkersSpec
-
-
-
-RequireFreeWorkersSpec makes the scheduler wait for a number of free
-workers before starting query execution.
-
-
-
-_Appears in:_
-- [PolarsClusterSpec](#polarsclusterspec)
-
-| Field | Description | Default | Validation |
-| --- | --- | --- | --- |
-| `count` _integer_ | Count is the number of free workers to wait for. Defaults to the<br />worker pool's replica count. |  | Optional: \{\} <br /> |
 
 
 #### RuntimeSpec

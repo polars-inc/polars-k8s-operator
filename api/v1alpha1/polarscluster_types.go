@@ -83,12 +83,6 @@ type PolarsClusterSpec struct {
 	// +kubebuilder:default=true
 	AllowAnonymousUsers bool `json:"allowAnonymousUsers,omitempty"`
 
-	// RequireFreeWorkers makes the scheduler wait for free workers before
-	// starting query execution. A nil count defaults to the worker pool's
-	// replica count.
-	// +optional
-	RequireFreeWorkers *RequireFreeWorkersSpec `json:"requireFreeWorkers,omitempty"`
-
 	// AnonymousResults is where results of queries that don't specify a
 	// result location are stored. Object storage is recommended so results
 	// persist; the compute plane never cleans up anonymous results itself.
@@ -259,15 +253,6 @@ type ImageSpec struct {
 	// https://kubernetes.io/docs/concepts/containers/images#updating-images
 	// +optional
 	PullPolicy v1.PullPolicy `json:"pullPolicy,omitempty"`
-}
-
-// RequireFreeWorkersSpec makes the scheduler wait for a number of free
-// workers before starting query execution.
-type RequireFreeWorkersSpec struct {
-	// Count is the number of free workers to wait for. Defaults to the
-	// worker pool's replica count.
-	// +optional
-	Count *uint32 `json:"count,omitempty"`
 }
 
 // ObservatorySpec configures the observatory dashboard.

@@ -1775,19 +1775,6 @@ spec:
                     - claimName
                     type: object
                 type: object
-              requireFreeWorkers:
-                description: |-
-                  RequireFreeWorkers makes the scheduler wait for free workers before
-                  starting query execution. A nil count defaults to the worker pool's
-                  replica count.
-                properties:
-                  count:
-                    description: |-
-                      Count is the number of free workers to wait for. Defaults to the
-                      worker pool's replica count.
-                    format: int32
-                    type: integer
-                type: object
               runtime:
                 description: |-
                   Runtime composes the scheduler/worker containers from the Polars

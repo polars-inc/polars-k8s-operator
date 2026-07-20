@@ -106,13 +106,7 @@ func computedSchedulerPodSpec(cluster *computev1.PolarsCluster, containerName st
 		{Name: observatoryDataVolumeName, MountPath: observatoryDataMountPath},
 	}, licenseMounts...)
 
-	if spec.RequireFreeWorkers != nil {
-		count := uint32(spec.WorkerPool.Replicas) //nolint:gosec // replicas is CEL- and marker-validated >= 0
-		if spec.RequireFreeWorkers.Count != nil {
-			count = *spec.RequireFreeWorkers.Count
-		}
-		scheduler.Int("n_workers", int64(count))
-	}
+	scheduler.Int("n_workers", int64(spec.WorkerPool.Replicas))
 
 	computedAnonymousResultsEnv(scheduler.Section("anonymous_result_location"), spec.AnonymousResults)
 

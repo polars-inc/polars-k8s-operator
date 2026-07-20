@@ -475,12 +475,11 @@ func TestBuildSchedulerPodTemplate_EnterpriseLicense(t *testing.T) {
 	}))
 }
 
-func TestBuildSchedulerPodTemplate_RequireFreeWorkersDefaultsToReplicas(t *testing.T) {
+func TestBuildSchedulerPodTemplate_NWorkersMatchesReplicas(t *testing.T) {
 	g := NewWithT(t)
 
 	cluster := schedulerCluster(corev1.Container{})
 	cluster.Spec.WorkerPool.Replicas = 4
-	cluster.Spec.RequireFreeWorkers = &computev1.RequireFreeWorkersSpec{}
 
 	result, err := BuildSchedulerPodTemplate(cluster)
 	g.Expect(err).NotTo(HaveOccurred())
@@ -488,13 +487,6 @@ func TestBuildSchedulerPodTemplate_RequireFreeWorkersDefaultsToReplicas(t *testi
 	nWorkers, ok := findEnv(result.Spec.Containers[0].Env, "PC_CUBLET__scheduler__n_workers")
 	g.Expect(ok).To(BeTrue())
 	g.Expect(nWorkers.Value).To(Equal("4"))
-
-	count := uint32(7)
-	cluster.Spec.RequireFreeWorkers.Count = &count
-	result, err = BuildSchedulerPodTemplate(cluster)
-	g.Expect(err).NotTo(HaveOccurred())
-	nWorkers, _ = findEnv(result.Spec.Containers[0].Env, "PC_CUBLET__scheduler__n_workers")
-	g.Expect(nWorkers.Value).To(Equal("7"))
 }
 
 func TestBuildSchedulerPodTemplate_HostMetricsDisabled(t *testing.T) {
