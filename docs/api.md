@@ -288,23 +288,6 @@ _Appears in:_
 | `licenseData` _[PersistentVolumeClaimRef](#persistentvolumeclaimref)_ | LicenseData persists the license certificate in an existing<br />PersistentVolumeClaim instead of an emptyDir, so it survives scheduler<br />pod restarts. |  | Optional: \{\} <br /> |
 
 
-#### LicenseServerSpec
-
-
-
-LicenseServerSpec connects the cluster to an offline Polars license
-server.
-
-
-
-_Appears in:_
-- [LicenseSpec](#licensespec)
-
-| Field | Description | Default | Validation |
-| --- | --- | --- | --- |
-| `uri` _string_ | URI of the license server. |  |  |
-
-
 #### LicenseSpec
 
 
@@ -313,7 +296,7 @@ LicenseSpec selects exactly one way the cluster's Polars license is
 provided.
 
 _Validation:_
-- ExactlyOneOf: [onPrem onPremEnterprise licenseServer]
+- ExactlyOneOf: [onPrem onPremEnterprise]
 
 _Appears in:_
 - [PolarsClusterSpec](#polarsclusterspec)
@@ -322,7 +305,6 @@ _Appears in:_
 | --- | --- | --- | --- |
 | `onPrem` _[LicenseOnPremSpec](#licenseonpremspec)_ | OnPrem licenses the cluster with Polars workspace client credentials. |  | Optional: \{\} <br /> |
 | `onPremEnterprise` _[LicenseOnPremEnterpriseSpec](#licenseonprementerprisespec)_ | OnPremEnterprise licenses the cluster from a Secret holding an<br />On-Prem Enterprise license key; requires acceptEula to be true. |  | Optional: \{\} <br /> |
-| `licenseServer` _[LicenseServerSpec](#licenseserverspec)_ | LicenseServer connects to an offline Polars license server. |  | Optional: \{\} <br /> |
 
 
 #### LineageSpec
@@ -488,7 +470,7 @@ _Appears in:_
 | `acceptEula` _boolean_ | AcceptEula must be set to true to use the On-Prem Enterprise license. | false | Optional: \{\} <br /> |
 | `version` _string_ | Version is the Polars on-premises release to run, as a semantic<br />version. The operator enforces its minimum supported release at<br />reconcile time. Version is used as the composed runtime's dist tag<br />unless runtime.composed.dist.tag overrides it; use that override for<br />non-release image tags. | 0.6.3 | MaxLength: 63 <br />Pattern: `^(0\|[1-9]\d*)\.(0\|[1-9]\d*)\.(0\|[1-9]\d*)(?:-((?:0\|[1-9]\d*\|\d*[a-zA-Z-][0-9a-zA-Z-]*)(?:\.(?:0\|[1-9]\d*\|\d*[a-zA-Z-][0-9a-zA-Z-]*))*))?(?:\+([0-9a-zA-Z-]+(?:\.[0-9a-zA-Z-]+)*))?$` <br />Optional: \{\} <br /> |
 | `runtime` _[RuntimeSpec](#runtimespec)_ | Runtime composes the scheduler/worker containers from the Polars<br />distribution and a Python base image. When nil, the pod templates must<br />bring their own image. |  | Optional: \{\} <br /> |
-| `license` _[LicenseSpec](#licensespec)_ | License selects how the cluster's Polars license is provided. |  | ExactlyOneOf: [onPrem onPremEnterprise licenseServer] <br /> |
+| `license` _[LicenseSpec](#licensespec)_ | License selects how the cluster's Polars license is provided. |  | ExactlyOneOf: [onPrem onPremEnterprise] <br /> |
 | `allowLocalSinks` _boolean_ | AllowLocalSinks permits workers to write query results to local disk.<br />Disabling this prevents all local writes; it is not possible to allow<br />only specific sink locations. Users can alternatively configure sinks<br />that write to object storage. More info:<br />https://docs.pola.rs/user-guide/io/cloud-storage/#writing-to-cloud-storage | true |  |
 | `allowLocalScans` _boolean_ | AllowLocalScans permits workers to read query inputs from local disk.<br />Disabling this prevents all local reads; it is not possible to allow<br />only specific scan locations. Users can alternatively configure scans<br />that read from object storage. More info:<br />https://docs.pola.rs/user-guide/io/cloud-storage/#reading-from-cloud-storage | false |  |
 | `allowAnonymousUsers` _boolean_ | AllowAnonymousUsers permits queries without a username. When false,<br />all queries must be sent with a set username. | true |  |

@@ -140,7 +140,7 @@ type ValueOrSource struct {
 
 // LicenseSpec selects exactly one way the cluster's Polars license is
 // provided.
-// +kubebuilder:validation:ExactlyOneOf=onPrem;onPremEnterprise;licenseServer
+// +kubebuilder:validation:ExactlyOneOf=onPrem;onPremEnterprise
 type LicenseSpec struct {
 	// OnPrem licenses the cluster with Polars workspace client credentials.
 	// +optional
@@ -150,17 +150,6 @@ type LicenseSpec struct {
 	// On-Prem Enterprise license key; requires acceptEula to be true.
 	// +optional
 	OnPremEnterprise *LicenseOnPremEnterpriseSpec `json:"onPremEnterprise,omitempty"`
-
-	// LicenseServer connects to an offline Polars license server.
-	// +optional
-	LicenseServer *LicenseServerSpec `json:"licenseServer,omitempty"`
-}
-
-// LicenseServerSpec connects the cluster to an offline Polars license
-// server.
-type LicenseServerSpec struct {
-	// URI of the license server.
-	URI string `json:"uri"`
 }
 
 // LicenseOnPremSpec licenses the cluster with Polars workspace client

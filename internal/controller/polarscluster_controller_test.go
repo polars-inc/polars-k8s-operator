@@ -19,9 +19,13 @@ import (
 )
 
 const (
-	testStandInImage     = "busybox"
-	validationNamespace  = "default"
-	testLicenseServerURI = "https://license-server:50051"
+	testStandInImage    = "busybox"
+	validationNamespace = "default"
+	licenseSecretName   = "test-license"
+
+	testClientIDKey     = "client-id"
+	testClientSecretKey = "client-secret"
+	testWorkspaceIDKey  = "workspace-id"
 )
 
 var _ = Describe("PolarsCluster Controller", func() {
@@ -29,7 +33,6 @@ var _ = Describe("PolarsCluster Controller", func() {
 		const (
 			resourceName      = "test-resource"
 			resourceNamespace = "default"
-			licenseSecretName = "test-license"
 		)
 
 		ctx := context.Background()
@@ -54,15 +57,15 @@ var _ = Describe("PolarsCluster Controller", func() {
 							OnPrem: &computev1.LicenseOnPremSpec{
 								ClientID: computev1.ValueOrSource{ValueFrom: &corev1.EnvVarSource{SecretKeyRef: &corev1.SecretKeySelector{
 									LocalObjectReference: corev1.LocalObjectReference{Name: licenseSecretName},
-									Key:                  "client-id",
+									Key:                  testClientIDKey,
 								}}},
 								ClientSecret: computev1.ValueOrSource{ValueFrom: &corev1.EnvVarSource{SecretKeyRef: &corev1.SecretKeySelector{
 									LocalObjectReference: corev1.LocalObjectReference{Name: licenseSecretName},
-									Key:                  "client-secret",
+									Key:                  testClientSecretKey,
 								}}},
 								WorkspaceID: computev1.ValueOrSource{ValueFrom: &corev1.EnvVarSource{SecretKeyRef: &corev1.SecretKeySelector{
 									LocalObjectReference: corev1.LocalObjectReference{Name: licenseSecretName},
-									Key:                  "workspace-id",
+									Key:                  testWorkspaceIDKey,
 								}}},
 							},
 						},
@@ -151,7 +154,20 @@ var _ = Describe("PolarsCluster validation", func() {
 			ObjectMeta: metav1.ObjectMeta{Name: "validation-version-default", Namespace: validationNamespace},
 			Spec: computev1.PolarsClusterSpec{
 				License: computev1.LicenseSpec{
-					LicenseServer: &computev1.LicenseServerSpec{URI: testLicenseServerURI},
+					OnPrem: &computev1.LicenseOnPremSpec{
+						ClientID: computev1.ValueOrSource{ValueFrom: &corev1.EnvVarSource{SecretKeyRef: &corev1.SecretKeySelector{
+							LocalObjectReference: corev1.LocalObjectReference{Name: licenseSecretName},
+							Key:                  testClientIDKey,
+						}}},
+						ClientSecret: computev1.ValueOrSource{ValueFrom: &corev1.EnvVarSource{SecretKeyRef: &corev1.SecretKeySelector{
+							LocalObjectReference: corev1.LocalObjectReference{Name: licenseSecretName},
+							Key:                  testClientSecretKey,
+						}}},
+						WorkspaceID: computev1.ValueOrSource{ValueFrom: &corev1.EnvVarSource{SecretKeyRef: &corev1.SecretKeySelector{
+							LocalObjectReference: corev1.LocalObjectReference{Name: licenseSecretName},
+							Key:                  testWorkspaceIDKey,
+						}}},
+					},
 				},
 				WorkerPool: computev1.WorkerPoolDeclaration{
 					PodTemplate: &corev1.PodTemplateSpec{
@@ -178,7 +194,21 @@ var _ = Describe("PolarsCluster validation", func() {
 				// enforces the minimum.
 				Version: "0.5.0",
 				License: computev1.LicenseSpec{
-					LicenseServer: &computev1.LicenseServerSpec{URI: testLicenseServerURI},
+
+					OnPrem: &computev1.LicenseOnPremSpec{
+						ClientID: computev1.ValueOrSource{ValueFrom: &corev1.EnvVarSource{SecretKeyRef: &corev1.SecretKeySelector{
+							LocalObjectReference: corev1.LocalObjectReference{Name: licenseSecretName},
+							Key:                  testClientIDKey,
+						}}},
+						ClientSecret: computev1.ValueOrSource{ValueFrom: &corev1.EnvVarSource{SecretKeyRef: &corev1.SecretKeySelector{
+							LocalObjectReference: corev1.LocalObjectReference{Name: licenseSecretName},
+							Key:                  testClientSecretKey,
+						}}},
+						WorkspaceID: computev1.ValueOrSource{ValueFrom: &corev1.EnvVarSource{SecretKeyRef: &corev1.SecretKeySelector{
+							LocalObjectReference: corev1.LocalObjectReference{Name: licenseSecretName},
+							Key:                  testWorkspaceIDKey,
+						}}},
+					},
 				},
 				WorkerPool: computev1.WorkerPoolDeclaration{
 					PodTemplate: &corev1.PodTemplateSpec{
@@ -214,7 +244,20 @@ var _ = Describe("PolarsCluster validation", func() {
 			Spec: computev1.PolarsClusterSpec{
 				Version: "latest",
 				License: computev1.LicenseSpec{
-					LicenseServer: &computev1.LicenseServerSpec{URI: testLicenseServerURI},
+					OnPrem: &computev1.LicenseOnPremSpec{
+						ClientID: computev1.ValueOrSource{ValueFrom: &corev1.EnvVarSource{SecretKeyRef: &corev1.SecretKeySelector{
+							LocalObjectReference: corev1.LocalObjectReference{Name: licenseSecretName},
+							Key:                  testClientIDKey,
+						}}},
+						ClientSecret: computev1.ValueOrSource{ValueFrom: &corev1.EnvVarSource{SecretKeyRef: &corev1.SecretKeySelector{
+							LocalObjectReference: corev1.LocalObjectReference{Name: licenseSecretName},
+							Key:                  testClientSecretKey,
+						}}},
+						WorkspaceID: computev1.ValueOrSource{ValueFrom: &corev1.EnvVarSource{SecretKeyRef: &corev1.SecretKeySelector{
+							LocalObjectReference: corev1.LocalObjectReference{Name: licenseSecretName},
+							Key:                  testWorkspaceIDKey,
+						}}},
+					},
 				},
 				WorkerPool: computev1.WorkerPoolDeclaration{
 					PodTemplate: &corev1.PodTemplateSpec{

@@ -1242,16 +1242,6 @@ spec:
               license:
                 description: License selects how the cluster's Polars license is provided.
                 properties:
-                  licenseServer:
-                    description: LicenseServer connects to an offline Polars license
-                      server.
-                    properties:
-                      uri:
-                        description: URI of the license server.
-                        type: string
-                    required:
-                    - uri
-                    type: object
                   onPrem:
                     description: OnPrem licenses the cluster with Polars workspace
                       client credentials.
@@ -1724,9 +1714,9 @@ spec:
                     type: object
                 type: object
                 x-kubernetes-validations:
-                - message: exactly one of the fields in [onPrem onPremEnterprise licenseServer]
+                - message: exactly one of the fields in [onPrem onPremEnterprise]
                     must be set
-                  rule: '[has(self.onPrem),has(self.onPremEnterprise),has(self.licenseServer)].filter(x,x==true).size()
+                  rule: '[has(self.onPrem),has(self.onPremEnterprise)].filter(x,x==true).size()
                     == 1'
               lineage:
                 description: |-

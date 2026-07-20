@@ -66,7 +66,7 @@ func TestBuildSchedulerPodTemplate_LicenseOnPrem(t *testing.T) {
 
 	cluster := schedulerCluster(corev1.Container{})
 	cluster.Spec.License.OnPrem = &computev1.LicenseOnPremSpec{
-		ClientID:     computev1.ValueOrSource{ValueFrom: &corev1.EnvVarSource{SecretKeyRef: &corev1.SecretKeySelector{Key: "client-id"}}},
+		ClientID:     computev1.ValueOrSource{ValueFrom: &corev1.EnvVarSource{SecretKeyRef: &corev1.SecretKeySelector{Key: testClientIDKey}}},
 		ClientSecret: computev1.ValueOrSource{Value: "literal-secret"},
 		WorkspaceID:  computev1.ValueOrSource{Value: "workspace-1"},
 	}
@@ -78,7 +78,7 @@ func TestBuildSchedulerPodTemplate_LicenseOnPrem(t *testing.T) {
 
 	clientID, ok := findEnv(scheduler.Env, "PC_CUBLET__license__on_prem__client_id")
 	g.Expect(ok).To(BeTrue())
-	g.Expect(clientID.ValueFrom.SecretKeyRef.Key).To(Equal("client-id"))
+	g.Expect(clientID.ValueFrom.SecretKeyRef.Key).To(Equal(testClientIDKey))
 
 	clientSecret, ok := findEnv(scheduler.Env, "PC_CUBLET__license__on_prem__client_secret")
 	g.Expect(ok).To(BeTrue())
@@ -495,22 +495,6 @@ func TestBuildSchedulerPodTemplate_RequireFreeWorkersDefaultsToReplicas(t *testi
 	g.Expect(err).NotTo(HaveOccurred())
 	nWorkers, _ = findEnv(result.Spec.Containers[0].Env, "PC_CUBLET__scheduler__n_workers")
 	g.Expect(nWorkers.Value).To(Equal("7"))
-}
-
-func TestBuildSchedulerPodTemplate_LicenseServer(t *testing.T) {
-	g := NewWithT(t)
-
-	cluster := schedulerCluster(corev1.Container{})
-	cluster.Spec.License.LicenseServer = &computev1.LicenseServerSpec{
-		URI: "https://license-server.polars.svc.cluster.local:50051",
-	}
-
-	result, err := BuildSchedulerPodTemplate(cluster)
-	g.Expect(err).NotTo(HaveOccurred())
-
-	uri, ok := findEnv(result.Spec.Containers[0].Env, "PC_CUBLET__license__license_server__uri")
-	g.Expect(ok).To(BeTrue())
-	g.Expect(uri.Value).To(Equal("https://license-server.polars.svc.cluster.local:50051"))
 }
 
 func TestBuildSchedulerPodTemplate_HostMetricsDisabled(t *testing.T) {

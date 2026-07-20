@@ -194,10 +194,6 @@ func schedulerLicenseConfig(cublet *envBuilder, cluster *computev1.PolarsCluster
 	case licenseSpec.OnPremEnterprise != nil:
 		license.Section("on_prem_enterprise").String("license_path", enterpriseLicensePath)
 		return enterpriseLicenseConfig(cluster)
-
-	case licenseSpec.LicenseServer != nil:
-		license.Section("license_server").String("uri", licenseSpec.LicenseServer.URI)
-		return nil, nil
 	}
 
 	return nil, nil

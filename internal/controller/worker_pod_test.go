@@ -432,22 +432,6 @@ func TestPodTemplateHash_ChangesWithSpec(t *testing.T) {
 	g.Expect(changedHash).NotTo(Equal(firstHash), "changed spec must produce a different hash")
 }
 
-func TestBuildWorkerPodTemplate_LicenseServer(t *testing.T) {
-	g := NewWithT(t)
-
-	cluster := polarsCluster(corev1.Container{})
-	cluster.Spec.License.LicenseServer = &computev1.LicenseServerSpec{
-		URI: "https://license-server.polars.svc.cluster.local:50051",
-	}
-
-	result, err := BuildWorkerPodTemplate(cluster)
-	g.Expect(err).NotTo(HaveOccurred())
-
-	address, ok := findEnv(result.Spec.Containers[0].Env, "PC_CUBLET__license__license_server__uri")
-	g.Expect(ok).To(BeTrue())
-	g.Expect(address.Value).To(Equal("https://license-server.polars.svc.cluster.local:50051"))
-}
-
 func TestBuildWorkerPodTemplate_LogLevelDefault(t *testing.T) {
 	g := NewWithT(t)
 
