@@ -17,7 +17,7 @@ import (
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 
-	computev1 "polars-inc/polars-k8s-operator/api/v1"
+	computev1 "github.com/polars-inc/polars-k8s-operator/api/v1alpha1"
 	// +kubebuilder:scaffold:imports
 )
 

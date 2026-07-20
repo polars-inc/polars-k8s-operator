@@ -19,8 +19,8 @@ import (
 	"k8s.io/utils/ptr"
 	"sigs.k8s.io/yaml"
 
-	computev1 "polars-inc/polars-k8s-operator/api/v1"
-	"polars-inc/polars-k8s-operator/test/utils"
+	computev1 "github.com/polars-inc/polars-k8s-operator/api/v1alpha1"
+	"github.com/polars-inc/polars-k8s-operator/test/utils"
 )
 
 // namespace where the project is deployed in
@@ -376,15 +376,15 @@ var _ = Describe("Manager", Ordered, func() {
 		// This keeps the checked-in sample manifest honest: the raw YAML a
 		// user would apply must stay valid against the CRD schema.
 		It("should accept the checked-in sample manifest", func() {
-			By("applying config/samples/compute_v1_polarscluster.yaml")
+			By("applying config/samples/compute_v1alpha1_polarscluster.yaml")
 			cmd := exec.Command("kubectl", "apply", "-n", clusterNamespace,
-				"-f", "config/samples/compute_v1_polarscluster.yaml")
+				"-f", "config/samples/compute_v1alpha1_polarscluster.yaml")
 			_, err := utils.Run(cmd)
 			Expect(err).NotTo(HaveOccurred(), "The checked-in sample manifest should be accepted")
 
 			By("deleting the sample PolarsCluster")
 			cmd = exec.Command("kubectl", "delete", "-n", clusterNamespace,
-				"-f", "config/samples/compute_v1_polarscluster.yaml")
+				"-f", "config/samples/compute_v1alpha1_polarscluster.yaml")
 			_, err = utils.Run(cmd)
 			Expect(err).NotTo(HaveOccurred())
 		})

@@ -6,7 +6,7 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 
-	computev1 "polars-inc/polars-k8s-operator/api/v1"
+	computev1 "github.com/polars-inc/polars-k8s-operator/api/v1alpha1"
 )
 
 // envBuilder accumulates corev1.EnvVar entries under a "__"-joined name, so

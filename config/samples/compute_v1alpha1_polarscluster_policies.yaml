@@ -1,6 +1,6 @@
 # Cluster-wide policy toggles: require queries to carry a username (deny
 # anonymous users), and turn off per-node host metrics collection.
-apiVersion: compute.pola.rs/v1
+apiVersion: compute.pola.rs/v1alpha1
 kind: PolarsCluster
 metadata:
   name: polars-policies

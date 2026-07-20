@@ -1,7 +1,7 @@
 # Pin the worker pool to dedicated nodes, sized to what's actually
 # available after Kubernetes' system reservations (e.g. 3x m5.xlarge:
 # 4 vCPU/16GiB nominal -> ~3770m CPU / ~14.31Gi available).
-apiVersion: compute.pola.rs/v1
+apiVersion: compute.pola.rs/v1alpha1
 kind: PolarsCluster
 metadata:
   name: polars-dedicated-nodes

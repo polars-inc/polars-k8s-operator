@@ -3,7 +3,7 @@
 # PersistentVolumeClaim (ReadWriteOnce — the observatory needs exclusive
 # access) to persist profiling data across restarts. The operator does not
 # create the claim; provision it separately first.
-apiVersion: compute.pola.rs/v1
+apiVersion: compute.pola.rs/v1alpha1
 kind: PolarsCluster
 metadata:
   name: polars-observatory

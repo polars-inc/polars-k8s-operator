@@ -1,4 +1,4 @@
-module polars-inc/polars-k8s-operator
+module github.com/polars-inc/polars-k8s-operator
 
 go 1.26.0
 

@@ -1,5 +1,5 @@
 # Image URL to use all building/pushing image targets
-IMG ?= polarscloud/polars-k8s-operator:v0.0.1
+IMG ?= controller:latest
 # YEAR defines the year value used for substituting the YEAR placeholder in the boilerplate header.
 YEAR ?= $(shell date +%Y)
 

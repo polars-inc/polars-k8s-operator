@@ -14,7 +14,7 @@ See `config/samples/` for runnable examples, and [docs/api.md](docs/api.md) for 
 ## API Reference
 
 Generated reference documentation for the `PolarsCluster` custom resource lives in
-[docs/api.md](docs/api.md). It is generated from the Go types in `api/v1` — after
+[docs/api.md](docs/api.md). It is generated from the Go types in `api/v1alpha1` — after
 changing them, run `make api-docs` and commit the result (CI fails on stale docs).
 
 ## Getting Started
@@ -115,12 +115,7 @@ helm install polars-k8s-operator polars-inc/polars-k8s-operator
 helm-generate` and `make build-installer`); `dist/` is not tracked in git.
 Durable chart changes must be made in `config/`, not in `dist/chart`.
 
-## Contributing
-// TODO(user): Add detailed information on how you would like others to contribute to this project
-
-**NOTE:** Run `make help` for more information on all potential `make` targets
-
-More information can be found via the [Kubebuilder Documentation](https://book.kubebuilder.io/introduction.html)
-
 ## License
+
+MIT — see [LICENSE](LICENSE).
 

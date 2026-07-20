@@ -19,8 +19,8 @@ import (
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
 
-	computev1 "polars-inc/polars-k8s-operator/api/v1"
-	"polars-inc/polars-k8s-operator/internal/controller"
+	computev1 "github.com/polars-inc/polars-k8s-operator/api/v1alpha1"
+	"github.com/polars-inc/polars-k8s-operator/internal/controller"
 	// +kubebuilder:scaffold:imports
 )
 

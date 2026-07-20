@@ -1,6 +1,6 @@
 # Export OpenLineage events to a collector (e.g. Marquez) for query
 # lineage tracking. See https://docs.pola.rs/polars-on-premises/integrations/openlineage/
-apiVersion: compute.pola.rs/v1
+apiVersion: compute.pola.rs/v1alpha1
 kind: PolarsCluster
 metadata:
   name: polars-lineage

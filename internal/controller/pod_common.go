@@ -8,7 +8,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/intstr"
 	utilversion "k8s.io/apimachinery/pkg/util/version"
 
-	computev1 "polars-inc/polars-k8s-operator/api/v1"
+	computev1 "github.com/polars-inc/polars-k8s-operator/api/v1alpha1"
 )
 
 const (

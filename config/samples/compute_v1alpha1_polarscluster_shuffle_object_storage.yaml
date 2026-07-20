@@ -5,7 +5,7 @@
 # Google Cloud Storage work the same way via workerPool.shuffleData.abs /
 # .gcs, whose "endpoint" URI scheme (az://, gs://) and option key names
 # differ (see docs/api.md).
-apiVersion: compute.pola.rs/v1
+apiVersion: compute.pola.rs/v1alpha1
 kind: PolarsCluster
 metadata:
   name: polars-shuffle-object-storage

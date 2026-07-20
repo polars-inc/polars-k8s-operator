@@ -3,7 +3,7 @@
 # The checkpoint location must be durable and shared across all workers —
 # object storage or a shared filesystem, never "local". Shown here for
 # AWS S3 — checkpoint.data.abs / .gcs follow the same shape.
-apiVersion: compute.pola.rs/v1
+apiVersion: compute.pola.rs/v1alpha1
 kind: PolarsCluster
 metadata:
   name: polars-checkpoint

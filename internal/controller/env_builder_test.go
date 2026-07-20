@@ -6,7 +6,7 @@ import (
 	. "github.com/onsi/gomega"
 	corev1 "k8s.io/api/core/v1"
 
-	computev1 "polars-inc/polars-k8s-operator/api/v1"
+	computev1 "github.com/polars-inc/polars-k8s-operator/api/v1alpha1"
 )
 
 func TestEnvBuilder_SectionJoining(t *testing.T) {

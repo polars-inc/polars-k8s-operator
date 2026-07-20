@@ -1,12 +1,12 @@
 # API Reference
 
 ## Packages
-- [compute.pola.rs/v1](#computepolarsv1)
+- [compute.pola.rs/v1alpha1](#computepolarsv1alpha1)
 
 
-## compute.pola.rs/v1
+## compute.pola.rs/v1alpha1
 
-Package v1 contains API Schema definitions for the compute v1 API group.
+Package v1alpha1 contains API Schema definitions for the compute v1alpha1 API group.
 
 ### Resource Types
 - [PolarsCluster](#polarscluster)
@@ -443,7 +443,7 @@ PolarsCluster is the Schema for the polarsclusters API
 
 | Field | Description | Default | Validation |
 | --- | --- | --- | --- |
-| `apiVersion` _string_ | `compute.pola.rs/v1` | | |
+| `apiVersion` _string_ | `compute.pola.rs/v1alpha1` | | |
 | `kind` _string_ | `PolarsCluster` | | |
 | `metadata` _[ObjectMeta](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.36/#objectmeta-v1-meta)_ | Refer to Kubernetes API documentation for fields of `metadata`. |  | Optional: \{\} <br /> |
 | `spec` _[PolarsClusterSpec](#polarsclusterspec)_ | spec defines the desired state of PolarsCluster |  | Required: \{\} <br /> |

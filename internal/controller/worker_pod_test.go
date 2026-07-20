@@ -9,7 +9,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	computev1 "polars-inc/polars-k8s-operator/api/v1"
+	computev1 "github.com/polars-inc/polars-k8s-operator/api/v1alpha1"
 )
 
 func polarsCluster(extra corev1.Container) *computev1.PolarsCluster {

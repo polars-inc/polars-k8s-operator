@@ -12,7 +12,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	"polars-inc/polars-k8s-operator/test/utils"
+	"github.com/polars-inc/polars-k8s-operator/test/utils"
 )
 
 var (

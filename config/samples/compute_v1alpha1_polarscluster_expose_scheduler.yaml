@@ -2,7 +2,7 @@
 # cluster (ClusterIP). Switch to LoadBalancer (recommended, with TLS
 # termination via the annotations your ingress/LB controller expects) or
 # NodePort to reach them from outside the cluster.
-apiVersion: compute.pola.rs/v1
+apiVersion: compute.pola.rs/v1alpha1
 kind: PolarsCluster
 metadata:
   name: polars-expose-scheduler

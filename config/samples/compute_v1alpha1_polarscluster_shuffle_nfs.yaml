@@ -1,7 +1,7 @@
 # Shuffle data on a shared network filesystem (e.g. NFS or a CSI driver
 # mount) instead of local disk or object storage. All workers must be able
 # to read/write the same path, so the volume is mounted on every worker pod.
-apiVersion: compute.pola.rs/v1
+apiVersion: compute.pola.rs/v1alpha1
 kind: PolarsCluster
 metadata:
   name: polars-shuffle-nfs

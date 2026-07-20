@@ -1,7 +1,7 @@
 # Temporary data is used by Polars itself (e.g. the streaming engine, or
 # downloading remote files). It defaults to an emptyDir; give it a
 # dedicated ephemeral volume to prevent large queries exhausting host disk.
-apiVersion: compute.pola.rs/v1
+apiVersion: compute.pola.rs/v1alpha1
 kind: PolarsCluster
 metadata:
   name: polars-temporary-data
