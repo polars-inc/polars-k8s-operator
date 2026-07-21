@@ -355,6 +355,49 @@ var _ = Describe("Manager", Ordered, func() {
 
 		itSetsOverallReadyCondition(busyboxSpecConfig)
 
+		itRejectsInvalidPodTemplate("scheduler", "SchedulerReady", "scheduler.podTemplate",
+			func() computev1.PolarsClusterSpec {
+				return computev1.PolarsClusterSpec{
+					License: computev1.LicenseSpec{
+						OnPrem: &computev1.LicenseOnPremSpec{
+							ClientID:     fieldRefValue("metadata.name"),
+							ClientSecret: fieldRefValue("metadata.name"),
+							WorkspaceID:  fieldRefValue("metadata.name"),
+						},
+					},
+					Scheduler: &computev1.SchedulerSpec{},
+				}
+			},
+			func(g Gomega, clusterName string) {
+				cmd := exec.Command("kubectl", "get", "pod", schedulerPodNameForCluster(clusterName), "-n", clusterNamespace)
+				_, err := utils.Run(cmd)
+				g.Expect(err).To(HaveOccurred())
+			},
+		)
+
+		itRejectsInvalidPodTemplate("worker", "WorkerPoolReady", "workerPool.podTemplate",
+			func() computev1.PolarsClusterSpec {
+				return computev1.PolarsClusterSpec{
+					License: computev1.LicenseSpec{
+						OnPrem: &computev1.LicenseOnPremSpec{
+							ClientID:     fieldRefValue("metadata.name"),
+							ClientSecret: fieldRefValue("metadata.name"),
+							WorkspaceID:  fieldRefValue("metadata.name"),
+						},
+					},
+					Scheduler: &computev1.SchedulerSpec{
+						PodTemplate: ptr.To(busyboxPodTemplate("scheduler")),
+					},
+				}
+			},
+			func(g Gomega, clusterName string) {
+				names, err := podNamesForSelector(clusterNamespace,
+					fmt.Sprintf("compute.pola.rs/cluster=%s,compute.pola.rs/component=worker", clusterName))
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(names).To(BeEmpty())
+			},
+		)
+
 		It("should create the scheduler, internal, and observatory Services", func() {
 			expected := map[string]string{
 				e2ePolarsClusterName + "-scheduler":          "5051",
@@ -656,6 +699,63 @@ func itSetsOverallReadyCondition(cfg sharedSpecConfig) {
 			g.Expect(err).NotTo(HaveOccurred())
 			g.Expect(output).To(Equal("True"))
 		}, cfg.readyTimeout, cfg.pollInterval).Should(Succeed())
+
+		By("verifying a Normal Reconciled event was recorded for the not-Ready to Ready transition")
+		Eventually(func(g Gomega) {
+			output, err := eventMessages(cfg.namespace, cfg.clusterName, "Reconciled", "Normal")
+			g.Expect(err).NotTo(HaveOccurred())
+			g.Expect(output).NotTo(BeEmpty())
+		}, cfg.readyTimeout, cfg.pollInterval).Should(Succeed())
+	})
+}
+
+// itRejectsInvalidPodTemplate verifies that a scheduler or worker podTemplate
+// with no containers (and no runtime to fall back on) is surfaced as a
+// Warning Event plus a False condition with reason InvalidPodTemplate,
+// rather than the noisy default requeue-with-backoff, and that the operator
+// never composes a Pod for the broken component.
+func itRejectsInvalidPodTemplate(
+	component, conditionType, templateField string,
+	buildSpec func() computev1.PolarsClusterSpec,
+	verifyNoPod func(g Gomega, clusterName string),
+) {
+	title := fmt.Sprintf("should record a Warning event and leave %s not Ready when the %s podTemplate is invalid",
+		conditionType, component)
+	It(title, func() {
+		clusterName := "e2e-cluster-invalid-" + component
+
+		cluster := newPolarsCluster(clusterNamespace, clusterName)
+		cluster.Spec = buildSpec()
+
+		By(fmt.Sprintf("creating a PolarsCluster with no %s podTemplate and no runtime configured", component))
+		Expect(kubectlApply(mustMarshalManifest(cluster))).To(Succeed())
+		defer func() {
+			cmd := exec.Command("kubectl", "delete", "polarscluster", clusterName, "-n", clusterNamespace, "--ignore-not-found")
+			_, _ = utils.Run(cmd)
+		}()
+
+		By(fmt.Sprintf("verifying the %s and Ready conditions report InvalidPodTemplate", conditionType))
+		jsonPath := fmt.Sprintf(
+			"jsonpath={.status.conditions[?(@.type=='%s')].reason} {.status.conditions[?(@.type=='Ready')].reason}",
+			conditionType)
+		Eventually(func(g Gomega) {
+			cmd := exec.Command("kubectl", "get", "polarscluster", clusterName, "-n", clusterNamespace, "-o", jsonPath)
+			output, err := utils.Run(cmd)
+			g.Expect(err).NotTo(HaveOccurred())
+			g.Expect(output).To(Equal("InvalidPodTemplate InvalidPodTemplate"))
+		}, time.Minute, time.Second).Should(Succeed())
+
+		By("verifying a Warning event was recorded")
+		Eventually(func(g Gomega) {
+			output, err := eventMessages(clusterNamespace, clusterName, "InvalidPodTemplate", "Warning")
+			g.Expect(err).NotTo(HaveOccurred())
+			g.Expect(output).To(ContainSubstring(templateField))
+		}, time.Minute, time.Second).Should(Succeed())
+
+		By(fmt.Sprintf("verifying no %s pod was created", component))
+		Consistently(func(g Gomega) {
+			verifyNoPod(g, clusterName)
+		}, 5*time.Second, time.Second).Should(Succeed())
 	})
 }
 
@@ -905,6 +1005,15 @@ func selectorForWorkerPool(ns, clusterName string) (string, error) {
 
 func schedulerPodNameForCluster(clusterName string) string {
 	return clusterName + "-scheduler"
+}
+
+// eventMessages returns the space-joined messages of Events recorded against
+// the named object matching reason and eventType (e.g. "Warning"/"Normal").
+func eventMessages(ns, objectName, reason, eventType string) (string, error) {
+	cmd := exec.Command("kubectl", "get", "events", "-n", ns,
+		"--field-selector", fmt.Sprintf("involvedObject.name=%s,reason=%s,type=%s", objectName, reason, eventType),
+		"-o", "jsonpath={.items[*].message}")
+	return utils.Run(cmd)
 }
 
 func containerEnvValue(ns, podName, envName string) (string, error) {

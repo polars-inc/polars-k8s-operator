@@ -35,12 +35,12 @@ func BuildWorkerPodTemplate(cluster *computev1.PolarsCluster) (corev1.Pod, error
 		containerName = baseContainer.Name
 		userProbe = baseContainer.ReadinessProbe != nil
 	} else if cluster.Spec.Runtime == nil {
-		return corev1.Pod{}, fmt.Errorf("workerPool.podTemplate must include at least one container when no runtime is configured")
+		return corev1.Pod{}, specErrorf("InvalidPodTemplate", "workerPool.podTemplate must include at least one container when no runtime is configured")
 	}
 
 	mergedSpec, err := mergePodSpec(base.Spec, computedWorkerPodSpec(cluster, containerName, baseContainer, !userProbe))
 	if err != nil {
-		return corev1.Pod{}, err
+		return corev1.Pod{}, specErrorf("InvalidPodTemplate", "workerPool.podTemplate: %w", err)
 	}
 
 	pod := corev1.Pod{

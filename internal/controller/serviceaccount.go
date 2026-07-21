@@ -5,7 +5,7 @@ import (
 	"fmt"
 
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/api/errors"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	ctrl "sigs.k8s.io/controller-runtime"
 
@@ -73,8 +73,8 @@ func (r *PolarsClusterReconciler) reconcileServiceAccount(ctx context.Context, c
 	if err := ctrl.SetControllerReference(cluster, sa, r.Scheme); err != nil {
 		return err
 	}
-	if err := r.Create(ctx, sa); err != nil && !errors.IsAlreadyExists(err) {
-		return err
+	if err := r.Create(ctx, sa); err != nil && !apierrors.IsAlreadyExists(err) {
+		return classifyAPIError("ServiceAccountRejected", err)
 	}
 	return nil
 }

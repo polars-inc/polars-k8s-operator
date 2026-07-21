@@ -1,8 +1,6 @@
 package controller
 
 import (
-	"fmt"
-
 	corev1 "k8s.io/api/core/v1"
 
 	computev1 "github.com/polars-inc/polars-k8s-operator/api/v1alpha1"
@@ -37,12 +35,12 @@ func BuildSchedulerPodTemplate(cluster *computev1.PolarsCluster) (corev1.Pod, er
 		containerName = base.Spec.Containers[0].Name
 		userProbe = base.Spec.Containers[0].ReadinessProbe != nil
 	} else if cluster.Spec.Runtime == nil {
-		return corev1.Pod{}, fmt.Errorf("scheduler.podTemplate must include at least one container when no runtime is configured")
+		return corev1.Pod{}, specErrorf("InvalidPodTemplate", "scheduler.podTemplate must include at least one container when no runtime is configured")
 	}
 
 	mergedSpec, err := mergePodSpec(base.Spec, computedSchedulerPodSpec(cluster, containerName, !userProbe))
 	if err != nil {
-		return corev1.Pod{}, err
+		return corev1.Pod{}, specErrorf("InvalidPodTemplate", "scheduler.podTemplate: %w", err)
 	}
 
 	pod := corev1.Pod{
