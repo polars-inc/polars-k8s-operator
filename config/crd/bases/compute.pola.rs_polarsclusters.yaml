@@ -19584,6 +19584,14 @@ spec:
                     items:
                       type: string
                     type: array
+                  workersToKeep:
+                    description: |-
+                      WorkersToKeep lists workers that must not be deleted during scale-down
+                      (e.g. because they are currently claimed by a running query), even if
+                      the pool needs to shrink to reach Replicas.
+                    items:
+                      type: string
+                    type: array
                 required:
                 - minReplicas
                 - replicas
@@ -19594,6 +19602,10 @@ spec:
                     self.maxReplicas, self.replicas])'
                   rule: self.replicas >= self.minReplicas && (!has(self.maxReplicas)
                     || self.replicas <= self.maxReplicas)
+                - message: workersToKeep must not exceed replicas
+                  messageExpression: '''workersToKeep (%d) must not exceed replicas
+                    (%d)''.format([size(self.workersToKeep), self.replicas])'
+                  rule: '!has(self.workersToKeep) || size(self.workersToKeep) <= self.replicas'
             required:
             - license
             - workerPool

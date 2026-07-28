@@ -311,6 +311,7 @@ type ServiceConfig struct {
 
 // WorkerPoolDeclaration defines the desired state of a PolarsCluster's worker pool.
 // +kubebuilder:validation:XValidation:rule="self.replicas >= self.minReplicas && (!has(self.maxReplicas) || self.replicas <= self.maxReplicas)",message="replicas must be within [minReplicas, maxReplicas]",messageExpression="'replicas must be within [%d, %d], got %d'.format([self.minReplicas, self.maxReplicas, self.replicas])"
+// +kubebuilder:validation:XValidation:rule="!has(self.workersToKeep) || size(self.workersToKeep) <= self.replicas",message="workersToKeep must not exceed replicas",messageExpression="'workersToKeep (%d) must not exceed replicas (%d)'.format([size(self.workersToKeep), self.replicas])"
 type WorkerPoolDeclaration struct {
 	// +optional
 	PodTemplate *v1.PodTemplateSpec `json:"podTemplate,omitempty"`
@@ -326,6 +327,12 @@ type WorkerPoolDeclaration struct {
 
 	// +optional
 	WorkersToDelete []string `json:"workersToDelete,omitempty"`
+
+	// WorkersToKeep lists workers that must not be deleted during scale-down
+	// (e.g. because they are currently claimed by a running query), even if
+	// the pool needs to shrink to reach Replicas.
+	// +optional
+	WorkersToKeep []string `json:"workersToKeep,omitempty"`
 
 	// HeartBeatInterval between workers and the scheduler. Defaults to 5s.
 	// +optional

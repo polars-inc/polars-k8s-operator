@@ -247,18 +247,26 @@ func (r *PolarsClusterReconciler) reconcileWorkerPool(ctx context.Context, clust
 			activeManagedPods = append(activeManagedPods, *pod)
 		}
 	} else if lackingPodCount < 0 {
-		var numPodsToDelete = -lackingPodCount
-		for i := range numPodsToDelete {
-			pod := &activeManagedPods[i]
-			if err := r.Delete(ctx, pod); err != nil {
-				if errors.IsNotFound(err) {
-					continue
-				}
+		numPodsToDelete := -lackingPodCount
 
+		workersToKeep := make(map[string]struct{}, len(wp.WorkersToKeep))
+		for _, name := range wp.WorkersToKeep {
+			workersToKeep[name] = struct{}{}
+		}
+
+		var remainingPods []corev1.Pod
+		for _, pod := range activeManagedPods {
+			if _, keep := workersToKeep[pod.Name]; keep || numPodsToDelete == 0 {
+				remainingPods = append(remainingPods, pod)
+				continue
+			}
+
+			if err := r.Delete(ctx, &pod); err != nil && !errors.IsNotFound(err) {
 				return computev1.WorkerPoolStatus{}, err
 			}
+			numPodsToDelete--
 		}
-		activeManagedPods = activeManagedPods[numPodsToDelete:]
+		activeManagedPods = remainingPods
 	}
 
 	var readyReplicas int32

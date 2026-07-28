@@ -1001,6 +1001,11 @@ func (in *WorkerPoolDeclaration) DeepCopyInto(out *WorkerPoolDeclaration) {
 		*out = make([]string, len(*in))
 		copy(*out, *in)
 	}
+	if in.WorkersToKeep != nil {
+		in, out := &in.WorkersToKeep, &out.WorkersToKeep
+		*out = make([]string, len(*in))
+		copy(*out, *in)
+	}
 	if in.HeartBeatInterval != nil {
 		in, out := &in.HeartBeatInterval, &out.HeartBeatInterval
 		*out = new(metav1.Duration)
