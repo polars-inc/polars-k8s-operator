@@ -552,6 +552,7 @@ _Appears in:_
 | --- | --- | --- | --- |
 | `services` _[SchedulerServicesSpec](#schedulerservicesspec)_ | Services configures the Services exposing the scheduler's ports. |  | Optional: \{\} <br /> |
 | `podTemplate` _[PodTemplateSpec](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.36/#podtemplatespec-v1-core)_ | PodTemplate customizes the scheduler pod; it is merged into the pod<br />the operator composes. |  | Optional: \{\} <br /> |
+| `serviceAccount` _[ServiceAccountSpec](#serviceaccountspec)_ | ServiceAccount configures the ServiceAccount the scheduler pod runs<br />as. Defaults to the namespace's default ServiceAccount when unset. |  | Optional: \{\} <br /> |
 
 
 #### SchedulerStatus
@@ -568,6 +569,24 @@ _Appears in:_
 | Field | Description | Default | Validation |
 | --- | --- | --- | --- |
 | `ready` _boolean_ | Ready reports whether the scheduler pod is Ready. |  |  |
+
+
+#### ServiceAccountSpec
+
+
+
+ServiceAccountSpec configures the ServiceAccount a pod runs as.
+
+
+
+_Appears in:_
+- [SchedulerSpec](#schedulerspec)
+- [WorkerPoolDeclaration](#workerpooldeclaration)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `create` _boolean_ | Create indicates whether the operator should create and own this<br />ServiceAccount. When false, Name must reference a ServiceAccount that<br />already exists in the cluster's namespace; the operator will not<br />create or manage it. |  | Optional: \{\} <br /> |
+| `name` _string_ | Name of the ServiceAccount. When Create is true and Name is empty, it<br />defaults to "<cluster>-scheduler" / "<cluster>-worker". When Create is<br />false and Name is empty, it defaults to "default" (the namespace's<br />default ServiceAccount). |  | Optional: \{\} <br /> |
 
 
 #### ServiceConfig
@@ -748,6 +767,7 @@ _Appears in:_
 | Field | Description | Default | Validation |
 | --- | --- | --- | --- |
 | `podTemplate` _[PodTemplateSpec](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.36/#podtemplatespec-v1-core)_ | PodTemplate customizes the worker pods; it is merged into the pod<br />the operator composes. |  | Optional: \{\} <br /> |
+| `serviceAccount` _[ServiceAccountSpec](#serviceaccountspec)_ | ServiceAccount configures the ServiceAccount the worker pods run as.<br />Defaults to the namespace's default ServiceAccount when unset. |  | Optional: \{\} <br /> |
 | `replicas` _integer_ | Replicas is the desired number of worker pods. |  | Minimum: 0 <br /> |
 | `heartBeatInterval` _[Duration](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.36/#duration-v1-meta)_ | HeartBeatInterval between workers and the scheduler. Defaults to 5s. |  | Optional: \{\} <br /> |
 | `shuffleData` _[ShuffleDataSpec](#shuffledataspec)_ | ShuffleData is the ephemeral storage for shuffle data. |  | ExactlyOneOf: [local sharedFilesystem s3 abs gcs] <br />Optional: \{\} <br /> |

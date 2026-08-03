@@ -11,7 +11,7 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/types"
-	"k8s.io/client-go/tools/record"
+	"k8s.io/client-go/tools/events"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
@@ -109,7 +109,7 @@ var _ = Describe("PolarsCluster Controller", func() {
 			controllerReconciler := &PolarsClusterReconciler{
 				Client:   k8sClient,
 				Scheme:   k8sClient.Scheme(),
-				Recorder: record.NewFakeRecorder(10),
+				Recorder: events.NewFakeRecorder(10),
 			}
 
 			_, err := controllerReconciler.Reconcile(ctx, reconcile.Request{
@@ -224,7 +224,7 @@ var _ = Describe("PolarsCluster validation", func() {
 		Expect(k8sClient.Create(ctx, cluster)).To(Succeed())
 		defer func() { _ = k8sClient.Delete(ctx, cluster) }()
 
-		reconciler := &PolarsClusterReconciler{Client: k8sClient, Scheme: k8sClient.Scheme(), Recorder: record.NewFakeRecorder(10)}
+		reconciler := &PolarsClusterReconciler{Client: k8sClient, Scheme: k8sClient.Scheme(), Recorder: events.NewFakeRecorder(10)}
 		_, err := reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: name})
 		Expect(err).NotTo(HaveOccurred())
 
@@ -313,7 +313,7 @@ var _ = Describe("PolarsCluster spec-error handling", func() {
 		Expect(k8sClient.Create(ctx, cluster)).To(Succeed())
 		defer func() { _ = k8sClient.Delete(ctx, cluster) }()
 
-		recorder := record.NewFakeRecorder(10)
+		recorder := events.NewFakeRecorder(10)
 		reconciler := &PolarsClusterReconciler{Client: k8sClient, Scheme: k8sClient.Scheme(), Recorder: recorder}
 		_, err := reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: name})
 		Expect(err).NotTo(HaveOccurred())
@@ -348,7 +348,7 @@ var _ = Describe("PolarsCluster spec-error handling", func() {
 		Expect(k8sClient.Create(ctx, cluster)).To(Succeed())
 		defer func() { _ = k8sClient.Delete(ctx, cluster) }()
 
-		recorder := record.NewFakeRecorder(10)
+		recorder := events.NewFakeRecorder(10)
 		reconciler := &PolarsClusterReconciler{Client: k8sClient, Scheme: k8sClient.Scheme(), Recorder: recorder}
 		_, err := reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: name})
 		Expect(err).NotTo(HaveOccurred())
@@ -392,7 +392,7 @@ var _ = Describe("PolarsCluster spec-error handling", func() {
 		Expect(k8sClient.Create(ctx, cluster)).To(Succeed())
 		defer func() { _ = k8sClient.Delete(ctx, cluster) }()
 
-		recorder := record.NewFakeRecorder(10)
+		recorder := events.NewFakeRecorder(10)
 		reconciler := &PolarsClusterReconciler{Client: k8sClient, Scheme: k8sClient.Scheme(), Recorder: recorder}
 		_, err := reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: name})
 		Expect(err).NotTo(HaveOccurred())
@@ -435,7 +435,7 @@ var _ = Describe("PolarsCluster spec-error handling", func() {
 		Expect(k8sClient.Create(ctx, cluster)).To(Succeed())
 		defer func() { _ = k8sClient.Delete(ctx, cluster) }()
 
-		recorder := record.NewFakeRecorder(10)
+		recorder := events.NewFakeRecorder(10)
 		reconciler := &PolarsClusterReconciler{Client: k8sClient, Scheme: k8sClient.Scheme(), Recorder: recorder}
 
 		By("reconciling before the scheduler pod is Ready")
@@ -491,14 +491,14 @@ var _ = Describe("PolarsCluster spec-error handling", func() {
 
 // drainEvents returns every event currently buffered on recorder's channel,
 // without blocking once it's empty.
-func drainEvents(recorder *record.FakeRecorder) []string {
-	var events []string
+func drainEvents(recorder *events.FakeRecorder) []string {
+	var drained []string
 	for {
 		select {
 		case e := <-recorder.Events:
-			events = append(events, e)
+			drained = append(drained, e)
 		default:
-			return events
+			return drained
 		}
 	}
 }
@@ -544,17 +544,17 @@ var _ = Describe("PolarsCluster lifecycle events", func() {
 		Expect(k8sClient.Create(ctx, cluster)).To(Succeed())
 		defer func() { _ = k8sClient.Delete(ctx, cluster) }()
 
-		recorder := record.NewFakeRecorder(20)
+		recorder := events.NewFakeRecorder(20)
 		reconciler := &PolarsClusterReconciler{Client: k8sClient, Scheme: k8sClient.Scheme(), Recorder: recorder}
 
 		By("reconciling the initial creation")
 		_, err := reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: name})
 		Expect(err).NotTo(HaveOccurred())
 
-		events := drainEvents(recorder)
-		Expect(events).To(ContainElement(ContainSubstring("SchedulerPodCreated")))
+		emitted := drainEvents(recorder)
+		Expect(emitted).To(ContainElement(ContainSubstring("SchedulerPodCreated")))
 		workerCreated := 0
-		for _, e := range events {
+		for _, e := range emitted {
 			if strings.Contains(e, "WorkerPodCreated") {
 				workerCreated++
 			}
@@ -624,7 +624,7 @@ var _ = Describe("PolarsCluster ServiceAccount reconciliation", func() {
 		Expect(k8sClient.Create(ctx, cluster)).To(Succeed())
 		defer func() { _ = k8sClient.Delete(ctx, cluster) }()
 
-		reconciler := &PolarsClusterReconciler{Client: k8sClient, Scheme: k8sClient.Scheme(), Recorder: record.NewFakeRecorder(10)}
+		reconciler := &PolarsClusterReconciler{Client: k8sClient, Scheme: k8sClient.Scheme(), Recorder: events.NewFakeRecorder(10)}
 		_, err := reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: name})
 		Expect(err).NotTo(HaveOccurred())
 
@@ -659,7 +659,7 @@ var _ = Describe("PolarsCluster ServiceAccount reconciliation", func() {
 		Expect(k8sClient.Create(ctx, cluster)).To(Succeed())
 		defer func() { _ = k8sClient.Delete(ctx, cluster) }()
 
-		reconciler := &PolarsClusterReconciler{Client: k8sClient, Scheme: k8sClient.Scheme(), Recorder: record.NewFakeRecorder(10)}
+		reconciler := &PolarsClusterReconciler{Client: k8sClient, Scheme: k8sClient.Scheme(), Recorder: events.NewFakeRecorder(10)}
 		_, err := reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: name})
 		Expect(err).NotTo(HaveOccurred())
 

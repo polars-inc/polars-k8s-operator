@@ -12,7 +12,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/meta"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/client-go/tools/record"
+	"k8s.io/client-go/tools/events"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
@@ -32,13 +32,18 @@ const (
 	conditionReady           = "Ready"
 	conditionSchedulerReady  = "SchedulerReady"
 	conditionWorkerPoolReady = "WorkerPoolReady"
+
+	// Event actions: what the controller did to the cluster it reports on.
+	actionReconcile = "Reconcile"
+	actionCreatePod = "CreatePod"
+	actionDeletePod = "DeletePod"
 )
 
 // PolarsClusterReconciler reconciles a PolarsCluster object
 type PolarsClusterReconciler struct {
 	client.Client
 	Scheme   *runtime.Scheme
-	Recorder record.EventRecorder
+	Recorder events.EventRecorder
 }
 
 // +kubebuilder:rbac:groups=compute.pola.rs,resources=polarsclusters,verbs=get;list;watch;create;update;patch;delete
@@ -48,6 +53,7 @@ type PolarsClusterReconciler struct {
 // +kubebuilder:rbac:groups="",resources=services,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups="",resources=serviceaccounts,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups="",resources=events,verbs=create;patch
+// +kubebuilder:rbac:groups=events.k8s.io,resources=events,verbs=create;patch
 
 // Reconcile is part of the main kubernetes reconciliation loop which aims to
 // move the current state of the cluster closer to the desired state.
@@ -130,9 +136,9 @@ func (r *PolarsClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 
 	switch nowReady := meta.IsStatusConditionTrue(cluster.Status.Conditions, conditionReady); {
 	case !wasReady && nowReady:
-		r.Recorder.Event(cluster, corev1.EventTypeNormal, "Reconciled", "PolarsCluster is Ready")
+		r.Recorder.Eventf(cluster, nil, corev1.EventTypeNormal, "Reconciled", actionReconcile, "PolarsCluster is Ready")
 	case wasReady && !nowReady:
-		r.Recorder.Event(cluster, corev1.EventTypeWarning, "NotReady", readyMessage)
+		r.Recorder.Eventf(cluster, nil, corev1.EventTypeWarning, "NotReady", actionReconcile, "%s", readyMessage)
 	}
 
 	return ctrl.Result{}, nil
@@ -160,7 +166,7 @@ func (r *PolarsClusterReconciler) recordSpecError(ctx context.Context, cluster *
 			ObservedGeneration: cluster.Generation,
 		})
 	}
-	r.Recorder.Event(cluster, corev1.EventTypeWarning, se.reason, se.Error())
+	r.Recorder.Eventf(cluster, nil, corev1.EventTypeWarning, se.reason, actionReconcile, "%s", se.Error())
 
 	cluster.Status.ObservedGeneration = cluster.Generation
 	if err := r.Status().Update(ctx, cluster); err != nil {
@@ -228,7 +234,7 @@ func (r *PolarsClusterReconciler) reconcileScheduler(ctx context.Context, cluste
 		if err := r.Create(ctx, &pod); err != nil {
 			return computev1.SchedulerStatus{}, "", classifyAPIError("SchedulerPodRejected", err)
 		}
-		r.Recorder.Eventf(cluster, corev1.EventTypeNormal, "SchedulerPodCreated", "Created scheduler pod %s", pod.Name)
+		r.Recorder.Eventf(cluster, nil, corev1.EventTypeNormal, "SchedulerPodCreated", actionCreatePod, "Created scheduler pod %s", pod.Name)
 
 		return computev1.SchedulerStatus{Ready: false}, "scheduler pod was just created", nil
 	} else if err != nil {
@@ -239,7 +245,7 @@ func (r *PolarsClusterReconciler) reconcileScheduler(ctx context.Context, cluste
 		if err := r.Delete(ctx, &existing); err != nil && !apierrors.IsNotFound(err) {
 			return computev1.SchedulerStatus{}, "", err
 		}
-		r.Recorder.Eventf(cluster, corev1.EventTypeNormal, "SchedulerPodRecreating", "Deleted scheduler pod %s for a template change", existing.Name)
+		r.Recorder.Eventf(cluster, nil, corev1.EventTypeNormal, "SchedulerPodRecreating", actionDeletePod, "Deleted scheduler pod %s for a template change", existing.Name)
 		// recreated on the next reconcile once the old pod is gone
 		return computev1.SchedulerStatus{Ready: false}, "scheduler pod is being recreated for a template change", nil
 	}
@@ -289,7 +295,7 @@ func (r *PolarsClusterReconciler) reconcileWorkerPool(ctx context.Context, clust
 			if err := r.Delete(ctx, &pod); err != nil && !apierrors.IsNotFound(err) {
 				return computev1.WorkerPoolStatus{}, "", err
 			}
-			r.Recorder.Eventf(cluster, corev1.EventTypeNormal, "WorkerPodRecreating", "Deleted worker pod %s for a template change", pod.Name)
+			r.Recorder.Eventf(cluster, nil, corev1.EventTypeNormal, "WorkerPodRecreating", actionDeletePod, "Deleted worker pod %s for a template change", pod.Name)
 			continue
 		}
 		activeManagedPods = append(activeManagedPods, pod)
@@ -303,7 +309,7 @@ func (r *PolarsClusterReconciler) reconcileWorkerPool(ctx context.Context, clust
 			if err := r.Create(ctx, pod); err != nil {
 				return computev1.WorkerPoolStatus{}, "", classifyAPIError("WorkerPodRejected", err)
 			}
-			r.Recorder.Eventf(cluster, corev1.EventTypeNormal, "WorkerPodCreated", "Created worker pod %s", pod.Name)
+			r.Recorder.Eventf(cluster, nil, corev1.EventTypeNormal, "WorkerPodCreated", actionCreatePod, "Created worker pod %s", pod.Name)
 
 			activeManagedPods = append(activeManagedPods, *pod)
 		}
@@ -318,7 +324,7 @@ func (r *PolarsClusterReconciler) reconcileWorkerPool(ctx context.Context, clust
 
 				return computev1.WorkerPoolStatus{}, "", err
 			}
-			r.Recorder.Eventf(cluster, corev1.EventTypeNormal, "WorkerPodDeleted", "Deleted worker pod %s", pod.Name)
+			r.Recorder.Eventf(cluster, nil, corev1.EventTypeNormal, "WorkerPodDeleted", actionDeletePod, "Deleted worker pod %s", pod.Name)
 		}
 		activeManagedPods = activeManagedPods[numPodsToDelete:]
 	}
