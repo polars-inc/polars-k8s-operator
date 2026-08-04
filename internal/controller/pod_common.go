@@ -71,7 +71,7 @@ func distTag(cluster *computev1.PolarsCluster) string {
 
 // minSupportedVersion is the oldest Polars on-premises release this operator
 // can manage.
-var minSupportedVersion = utilversion.MustParseSemantic("0.6.3")
+var minSupportedVersion = utilversion.MustParseSemantic("0.7.1")
 
 // clusterVersion parses spec.version and enforces the supported minimum,
 // returning nil when the version is unset. The schema validates the format

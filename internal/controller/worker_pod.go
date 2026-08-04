@@ -92,6 +92,13 @@ func computedWorkerPodSpec(cluster *computev1.PolarsCluster, containerName strin
 	worker.FieldRef("task_service__public_addr__ip", "status.podIP")
 	worker.FieldRef("shuffle_service__public_addr__ip", "status.podIP")
 	worker.String("heartbeat_period", workerHeartBeatInterval(wp))
+	extras := worker.Section("extras")
+	if wp.Extras.HDFS != nil {
+		extras.Section("hdfs").Bool("enabled", true)
+	}
+	if wp.Extras.PyIceberg != nil {
+		extras.Section("pyiceberg").Bool("enabled", true)
+	}
 	b.String("POLARS_TEMP_DIR", temporaryDataMountPath+"/temporary_data")
 	b.String("OTEL_SERVICE_NAME", fmt.Sprintf("%s-worker", cluster.Name))
 

@@ -215,6 +215,36 @@ _Appears in:_
 | `size` _[Quantity](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.36/#quantity-resource-api)_ | Size of the volume requested by the claim. More info:<br />https://kubernetes.io/docs/concepts/storage/persistent-volumes#capacity |  |  |
 
 
+#### ExtrasSpec
+
+
+
+ExtrasSpec configures additional features for the worker pool.
+
+
+
+_Appears in:_
+- [WorkerPoolDeclaration](#workerpooldeclaration)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `hdfs` _[HDFSSpec](#hdfsspec)_ | HDFS configures HDFS support for the worker pool. |  | Optional: \{\} <br /> |
+| `pyiceberg` _[PyIcebergSpec](#pyicebergspec)_ | PyIceberg configures PyIceberg support for the worker pool. For metadata access, two python packages must be installed on the worker virtual environment, i.e. hdfs-native and pyiceberg. Note, the python dependencies are not required for direct data access. |  | Optional: \{\} <br /> |
+
+
+#### HDFSSpec
+
+
+
+
+
+
+
+_Appears in:_
+- [ExtrasSpec](#extrasspec)
+
+
+
 #### HostMetricsSpec
 
 
@@ -468,7 +498,7 @@ _Appears in:_
 | `imagePullSecrets` _[LocalObjectReference](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.36/#localobjectreference-v1-core) array_ | ImagePullSecrets are references to Secrets in the same namespace to<br />use for pulling any of the cluster's images. |  | Optional: \{\} <br /> |
 | `clusterID` _string_ | ClusterID uniquely identifies the Polars cluster in a multi-tenant<br />environment. Defaults to "<namespace>/<name>". |  | Optional: \{\} <br /> |
 | `acceptEula` _boolean_ | AcceptEula must be set to true to use the On-Prem Enterprise license. | false | Optional: \{\} <br /> |
-| `version` _string_ | Version is the Polars on-premises release to run, as a semantic<br />version. The operator enforces its minimum supported release at<br />reconcile time. Version is used as the composed runtime's dist tag<br />unless runtime.composed.dist.tag overrides it; use that override for<br />non-release image tags. | 0.6.3 | MaxLength: 63 <br />Pattern: `^(0\|[1-9]\d*)\.(0\|[1-9]\d*)\.(0\|[1-9]\d*)(?:-((?:0\|[1-9]\d*\|\d*[a-zA-Z-][0-9a-zA-Z-]*)(?:\.(?:0\|[1-9]\d*\|\d*[a-zA-Z-][0-9a-zA-Z-]*))*))?(?:\+([0-9a-zA-Z-]+(?:\.[0-9a-zA-Z-]+)*))?$` <br />Optional: \{\} <br /> |
+| `version` _string_ | Version is the Polars on-premises release to run, as a semantic<br />version. The operator enforces its minimum supported release at<br />reconcile time. Version is used as the composed runtime's dist tag<br />unless runtime.composed.dist.tag overrides it; use that override for<br />non-release image tags. | 0.7.1 | MaxLength: 63 <br />Pattern: `^(0\|[1-9]\d*)\.(0\|[1-9]\d*)\.(0\|[1-9]\d*)(?:-((?:0\|[1-9]\d*\|\d*[a-zA-Z-][0-9a-zA-Z-]*)(?:\.(?:0\|[1-9]\d*\|\d*[a-zA-Z-][0-9a-zA-Z-]*))*))?(?:\+([0-9a-zA-Z-]+(?:\.[0-9a-zA-Z-]+)*))?$` <br />Optional: \{\} <br /> |
 | `runtime` _[RuntimeSpec](#runtimespec)_ | Runtime composes the scheduler/worker containers from the Polars<br />distribution and a Python base image. When nil, the pod templates must<br />bring their own image. |  | Optional: \{\} <br /> |
 | `license` _[LicenseSpec](#licensespec)_ | License selects how the cluster's Polars license is provided. |  | ExactlyOneOf: [onPrem onPremEnterprise] <br /> |
 | `allowLocalSinks` _boolean_ | AllowLocalSinks permits workers to write query results to local disk.<br />Disabling this prevents all local writes; it is not possible to allow<br />only specific sink locations. Users can alternatively configure sinks<br />that write to object storage. More info:<br />https://docs.pola.rs/user-guide/io/cloud-storage/#writing-to-cloud-storage | true |  |
@@ -500,6 +530,19 @@ _Appears in:_
 | `observedGeneration` _integer_ | ObservedGeneration is the most recent spec generation reflected by<br />this status. Clients should treat the status as stale while it trails<br />metadata.generation. |  | Optional: \{\} <br /> |
 | `scheduler` _[SchedulerStatus](#schedulerstatus)_ | Scheduler is the observed state of the scheduler. |  | Optional: \{\} <br /> |
 | `workerPool` _[WorkerPoolStatus](#workerpoolstatus)_ | WorkerPool is the observed state of the worker pool. |  | Optional: \{\} <br /> |
+
+
+#### PyIcebergSpec
+
+
+
+
+
+
+
+_Appears in:_
+- [ExtrasSpec](#extrasspec)
+
 
 
 #### RuntimeSpec
@@ -772,6 +815,7 @@ _Appears in:_
 | `heartBeatInterval` _[Duration](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.36/#duration-v1-meta)_ | HeartBeatInterval between workers and the scheduler. Defaults to 5s. |  | Optional: \{\} <br /> |
 | `shuffleData` _[ShuffleDataSpec](#shuffledataspec)_ | ShuffleData is the ephemeral storage for shuffle data. |  | ExactlyOneOf: [local sharedFilesystem s3 abs gcs] <br />Optional: \{\} <br /> |
 | `temporaryData` _[TemporaryDataSpec](#temporarydataspec)_ | TemporaryData is the ephemeral storage for temporary data used by<br />Polars (e.g. streaming data). Host-local SSD storage is recommended<br />for better performance. |  | Optional: \{\} <br /> |
+| `extras` _[ExtrasSpec](#extrasspec)_ |  |  |  |
 
 
 #### WorkerPoolStatus

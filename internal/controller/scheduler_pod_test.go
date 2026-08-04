@@ -24,7 +24,7 @@ const (
 	testSidecarName       = "sidecar"
 	testOptionRegion      = "region"
 	testOptionRegionValue = "us-east-1"
-	testDistTag           = "0.6.3"
+	testDistTag           = "0.7.1"
 )
 
 func schedulerCluster(extra corev1.Container) *computev1.PolarsCluster {
@@ -242,7 +242,7 @@ func TestBuildSchedulerPodTemplate_ComposedRuntime(t *testing.T) {
 	g.Expect(result.Spec.InitContainers).To(HaveLen(2))
 	release := result.Spec.InitContainers[0]
 	g.Expect(release.Name).To(Equal("release"))
-	g.Expect(release.Image).To(Equal("polarscloud/polars-on-premises:0.6.3"))
+	g.Expect(release.Image).To(Equal("polarscloud/polars-on-premises:0.7.1"))
 	g.Expect(release.Args).To(Equal([]string{"-a", "/opt/.", "/emptydir"}))
 
 	requirementsInit := result.Spec.InitContainers[1]
@@ -302,12 +302,12 @@ func TestClusterVersion(t *testing.T) {
 	g.Expect(err).To(HaveOccurred())
 	g.Expect(err.Error()).To(ContainSubstring(`"latest" is not a semantic version`))
 
-	cluster.Spec.Version = "0.6.2"
+	cluster.Spec.Version = "0.7.0"
 	_, err = clusterVersion(cluster)
 	g.Expect(err).To(HaveOccurred())
-	g.Expect(err.Error()).To(ContainSubstring("requires at least 0.6.3"))
+	g.Expect(err.Error()).To(ContainSubstring("requires at least 0.7.1"))
 
-	cluster.Spec.Version = "0.7.0-rc.1"
+	cluster.Spec.Version = "0.8.0-rc.1"
 	_, err = clusterVersion(cluster)
 	g.Expect(err).NotTo(HaveOccurred(), "pre-releases above the minimum are supported")
 }
@@ -318,7 +318,7 @@ func TestBuildSchedulerPodTemplate_ComposedRuntimeVersionFallback(t *testing.T) 
 	cluster := &computev1.PolarsCluster{
 		ObjectMeta: metav1.ObjectMeta{Name: testClusterName, Namespace: testClusterNamespace},
 		Spec: computev1.PolarsClusterSpec{
-			Version: "0.7.0",
+			Version: "0.8.0",
 			Runtime: &computev1.RuntimeSpec{Composed: computev1.ComposedRuntimeSpec{}},
 		},
 	}
@@ -327,14 +327,14 @@ func TestBuildSchedulerPodTemplate_ComposedRuntimeVersionFallback(t *testing.T) 
 	g.Expect(err).NotTo(HaveOccurred())
 
 	g.Expect(result.Spec.InitContainers).To(HaveLen(1))
-	g.Expect(result.Spec.InitContainers[0].Image).To(Equal("polarscloud/polars-on-premises:0.7.0"))
-	g.Expect(result.Labels["app.kubernetes.io/version"]).To(Equal("0.7.0"))
+	g.Expect(result.Spec.InitContainers[0].Image).To(Equal("polarscloud/polars-on-premises:0.8.0"))
+	g.Expect(result.Labels["app.kubernetes.io/version"]).To(Equal("0.8.0"))
 
 	cluster.Spec.Runtime.Composed.Dist = &computev1.ImageSpec{Tag: testDistTag}
 	result, err = BuildSchedulerPodTemplate(cluster)
 	g.Expect(err).NotTo(HaveOccurred())
 
-	g.Expect(result.Spec.InitContainers[0].Image).To(Equal("polarscloud/polars-on-premises:0.6.3"),
+	g.Expect(result.Spec.InitContainers[0].Image).To(Equal("polarscloud/polars-on-premises:0.7.1"),
 		"dist.tag should override spec.version")
 	g.Expect(result.Labels["app.kubernetes.io/version"]).To(Equal(testDistTag))
 }

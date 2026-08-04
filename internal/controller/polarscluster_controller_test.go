@@ -233,7 +233,7 @@ var _ = Describe("PolarsCluster validation", func() {
 		Expect(cond).NotTo(BeNil())
 		Expect(cond.Status).To(Equal(metav1.ConditionFalse))
 		Expect(cond.Reason).To(Equal("InvalidVersion"))
-		Expect(cond.Message).To(ContainSubstring("requires at least 0.6.3"))
+		Expect(cond.Message).To(ContainSubstring("requires at least 0.7.1"))
 
 		var pods corev1.PodList
 		Expect(k8sClient.List(ctx, &pods, client.InNamespace(name.Namespace),

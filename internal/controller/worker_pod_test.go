@@ -34,7 +34,7 @@ func TestBuildWorkerPodTemplate_ComposedRuntimeWithoutTemplate(t *testing.T) {
 	cluster := &computev1.PolarsCluster{
 		ObjectMeta: metav1.ObjectMeta{Name: testClusterName, Namespace: testClusterNamespace},
 		Spec: computev1.PolarsClusterSpec{
-			Version: "0.7.0",
+			Version: testDistTag,
 			Runtime: &computev1.RuntimeSpec{Composed: computev1.ComposedRuntimeSpec{}},
 		},
 	}
@@ -253,6 +253,37 @@ func TestBuildWorkerPodTemplate_HeartBeatInterval(t *testing.T) {
 	heartbeat, ok := findEnv(result.Spec.Containers[0].Env, "PC_CUBLET__worker__heartbeat_period")
 	g.Expect(ok).To(BeTrue())
 	g.Expect(heartbeat.Value).To(Equal("30s"))
+}
+
+func TestBuildWorkerPodTemplate_Extras(t *testing.T) {
+	g := NewWithT(t)
+
+	cluster := polarsCluster(corev1.Container{})
+	result, err := BuildWorkerPodTemplate(cluster)
+	g.Expect(err).NotTo(HaveOccurred())
+
+	env := result.Spec.Containers[0].Env
+	_, ok := findEnv(env, "PC_CUBLET__worker__extras__hdfs__enabled")
+	g.Expect(ok).To(BeFalse())
+	_, ok = findEnv(env, "PC_CUBLET__worker__extras__pyiceberg__enabled")
+	g.Expect(ok).To(BeFalse())
+
+	cluster.Spec.WorkerPool.Extras = computev1.ExtrasSpec{
+		HDFS:      &computev1.HDFSSpec{},
+		PyIceberg: &computev1.PyIcebergSpec{},
+	}
+	result, err = BuildWorkerPodTemplate(cluster)
+	g.Expect(err).NotTo(HaveOccurred())
+
+	env = result.Spec.Containers[0].Env
+
+	hdfs, ok := findEnv(env, "PC_CUBLET__worker__extras__hdfs__enabled")
+	g.Expect(ok).To(BeTrue())
+	g.Expect(hdfs.Value).To(Equal(envValueTrue))
+
+	pyIceberg, ok := findEnv(env, "PC_CUBLET__worker__extras__pyiceberg__enabled")
+	g.Expect(ok).To(BeTrue())
+	g.Expect(pyIceberg.Value).To(Equal(envValueTrue))
 }
 
 func TestBuildWorkerPodTemplate_HostMetricsDisabled(t *testing.T) {

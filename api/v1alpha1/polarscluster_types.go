@@ -13,7 +13,7 @@ import (
 // DefaultVersion is the Polars on-premises release deployed when
 // spec.version is unset. Keep in sync with the +kubebuilder:default marker
 // on PolarsClusterSpec.Version.
-const DefaultVersion = "0.6.3"
+const DefaultVersion = "0.7.1"
 
 // PolarsClusterSpec defines the desired state of PolarsCluster
 // +kubebuilder:validation:XValidation:rule="!has(self.license.onPremEnterprise) || (has(self.acceptEula) && self.acceptEula)",message="acceptEula must be true when using the On-Prem Enterprise license"
@@ -47,7 +47,7 @@ type PolarsClusterSpec struct {
 	// reconcile time. Version is used as the composed runtime's dist tag
 	// unless runtime.composed.dist.tag overrides it; use that override for
 	// non-release image tags.
-	// +kubebuilder:default="0.6.3"
+	// +kubebuilder:default="0.7.1"
 	// +kubebuilder:validation:MaxLength=63
 	// +kubebuilder:validation:Pattern=`^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-((?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*)(?:\.(?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*))*))?(?:\+([0-9a-zA-Z-]+(?:\.[0-9a-zA-Z-]+)*))?$`
 	// +optional
@@ -473,6 +473,8 @@ type WorkerPoolDeclaration struct {
 	// for better performance.
 	// +optional
 	TemporaryData *TemporaryDataSpec `json:"temporaryData,omitempty"`
+
+	Extras ExtrasSpec `json:"extras,omitempty"`
 }
 
 // HostMetricsSpec controls host metrics collection for the observatory
@@ -489,6 +491,20 @@ type TemporaryDataSpec struct {
 	// +optional
 	EphemeralVolumeClaim *EphemeralVolumeClaimSpec `json:"ephemeralVolumeClaim,omitempty"`
 }
+
+// ExtrasSpec configures additional features for the worker pool.
+type ExtrasSpec struct {
+	// HDFS configures HDFS support for the worker pool.
+	// +optional
+	HDFS *HDFSSpec `json:"hdfs"`
+	// PyIceberg configures PyIceberg support for the worker pool. For metadata access, two python packages must be installed on the worker virtual environment, i.e. hdfs-native and pyiceberg. Note, the python dependencies are not required for direct data access.
+	// +optional
+	PyIceberg *PyIcebergSpec `json:"pyiceberg"`
+}
+
+type HDFSSpec struct{}
+
+type PyIcebergSpec struct{}
 
 // ShuffleDataSpec selects exactly one storage location for shuffle data.
 // +kubebuilder:validation:ExactlyOneOf=local;sharedFilesystem;s3;abs;gcs
