@@ -25,6 +25,7 @@ const (
 	testOptionRegion      = "region"
 	testOptionRegionValue = "us-east-1"
 	testDistTag           = "0.7.1"
+	testCloudSecretName   = "polars-cloud-cert"
 )
 
 func schedulerCluster(extra corev1.Container) *computev1.PolarsCluster {
@@ -316,7 +317,7 @@ func TestClusterVersion_CloudLicenseMinimum(t *testing.T) {
 	g := NewWithT(t)
 
 	cluster := schedulerCluster(corev1.Container{})
-	cluster.Spec.License.Cloud = &computev1.LicenseCloudSpec{SecretName: "polars-cloud-cert"}
+	cluster.Spec.License.Cloud = &computev1.LicenseCloudSpec{SecretName: testCloudSecretName}
 
 	cluster.Spec.Version = computev1.DefaultVersion
 	_, err := clusterVersion(cluster)
@@ -502,7 +503,7 @@ func TestBuildSchedulerPodTemplate_CloudLicense(t *testing.T) {
 	g := NewWithT(t)
 
 	cluster := schedulerCluster(corev1.Container{})
-	cluster.Spec.License.Cloud = &computev1.LicenseCloudSpec{SecretName: "polars-cloud-cert"}
+	cluster.Spec.License.Cloud = &computev1.LicenseCloudSpec{SecretName: testCloudSecretName}
 
 	result, err := BuildSchedulerPodTemplate(cluster)
 	g.Expect(err).NotTo(HaveOccurred())
@@ -515,7 +516,7 @@ func TestBuildSchedulerPodTemplate_CloudLicense(t *testing.T) {
 
 	volume, ok := findVolume(result.Spec.Volumes, cloudLicenseVolume)
 	g.Expect(ok).To(BeTrue())
-	g.Expect(volume.Secret.SecretName).To(Equal("polars-cloud-cert"))
+	g.Expect(volume.Secret.SecretName).To(Equal(testCloudSecretName))
 	g.Expect(volume.Secret.Items).To(Equal([]corev1.KeyToPath{
 		{Key: "tls.crt", Path: "certificate.pem"},
 		{Key: "tls.key", Path: "private_key.pem"},
@@ -603,7 +604,7 @@ func TestBuildSchedulerPodTemplate_CloudLicenseRegisterNode(t *testing.T) {
 
 	cluster := schedulerCluster(corev1.Container{})
 	cluster.Spec.License.Cloud = &computev1.LicenseCloudSpec{
-		SecretName: "polars-cloud-cert",
+		SecretName: testCloudSecretName,
 		RegisterNode: &computev1.RegisterNodeSpec{
 			PrivateAddress: computev1.ValueOrSource{
 				ValueFrom: &corev1.EnvVarSource{
@@ -631,7 +632,7 @@ func TestBuildSchedulerPodTemplate_CloudLicensePublicAddress(t *testing.T) {
 
 	cluster := schedulerCluster(corev1.Container{})
 	cluster.Spec.License.Cloud = &computev1.LicenseCloudSpec{
-		SecretName: "polars-cloud-cert",
+		SecretName: testCloudSecretName,
 		RegisterNode: &computev1.RegisterNodeSpec{
 			PrivateAddress: computev1.ValueOrSource{Value: "10.0.0.1"},
 			PublicAddress:  &computev1.ValueOrSource{Value: "compute.example"},
@@ -656,7 +657,7 @@ func TestBuildSchedulerPodTemplate_NoRegisterNodeNoAddressEnv(t *testing.T) {
 	g := NewWithT(t)
 
 	cluster := schedulerCluster(corev1.Container{})
-	cluster.Spec.License.Cloud = &computev1.LicenseCloudSpec{SecretName: "polars-cloud-cert"}
+	cluster.Spec.License.Cloud = &computev1.LicenseCloudSpec{SecretName: testCloudSecretName}
 
 	result, err := BuildSchedulerPodTemplate(cluster)
 	g.Expect(err).NotTo(HaveOccurred())
