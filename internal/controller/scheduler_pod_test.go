@@ -312,6 +312,29 @@ func TestClusterVersion(t *testing.T) {
 	g.Expect(err).NotTo(HaveOccurred(), "pre-releases above the minimum are supported")
 }
 
+func TestClusterVersion_CloudLicenseMinimum(t *testing.T) {
+	g := NewWithT(t)
+
+	cluster := schedulerCluster(corev1.Container{})
+	cluster.Spec.License.Cloud = &computev1.LicenseCloudSpec{SecretName: "polars-cloud-cert"}
+
+	cluster.Spec.Version = computev1.DefaultVersion
+	_, err := clusterVersion(cluster)
+	g.Expect(err).To(HaveOccurred())
+	g.Expect(err.Error()).To(ContainSubstring("does not support the cloud license"))
+	g.Expect(err.Error()).To(ContainSubstring("requires at least 0.8.0"))
+
+	cluster.Spec.Version = "0.8.0"
+	v, err := clusterVersion(cluster)
+	g.Expect(err).NotTo(HaveOccurred())
+	g.Expect(v.String()).To(Equal("0.8.0"))
+
+	cluster.Spec.License.Cloud = nil
+	cluster.Spec.Version = computev1.DefaultVersion
+	_, err = clusterVersion(cluster)
+	g.Expect(err).NotTo(HaveOccurred(), "the floor only applies to the cloud license")
+}
+
 func TestBuildSchedulerPodTemplate_ComposedRuntimeVersionFallback(t *testing.T) {
 	g := NewWithT(t)
 
@@ -475,6 +498,36 @@ func TestBuildSchedulerPodTemplate_EnterpriseLicense(t *testing.T) {
 	}))
 }
 
+func TestBuildSchedulerPodTemplate_CloudLicense(t *testing.T) {
+	g := NewWithT(t)
+
+	cluster := schedulerCluster(corev1.Container{})
+	cluster.Spec.License.Cloud = &computev1.LicenseCloudSpec{SecretName: "polars-cloud-cert"}
+
+	result, err := BuildSchedulerPodTemplate(cluster)
+	g.Expect(err).NotTo(HaveOccurred())
+
+	scheduler := result.Spec.Containers[0]
+
+	certDir, ok := findEnv(scheduler.Env, "PC_CUBLET__license__cloud__cert_dir")
+	g.Expect(ok).To(BeTrue())
+	g.Expect(certDir.Value).To(Equal(cloudLicenseMountDir))
+
+	volume, ok := findVolume(result.Spec.Volumes, cloudLicenseVolume)
+	g.Expect(ok).To(BeTrue())
+	g.Expect(volume.Secret.SecretName).To(Equal("polars-cloud-cert"))
+	g.Expect(volume.Secret.Items).To(Equal([]corev1.KeyToPath{
+		{Key: "tls.crt", Path: "certificate.pem"},
+		{Key: "tls.key", Path: "private_key.pem"},
+		{Key: "ca.crt", Path: "ca_cert.pem"},
+	}))
+
+	g.Expect(scheduler.VolumeMounts).To(ContainElement(corev1.VolumeMount{
+		Name:      cloudLicenseVolume,
+		MountPath: cloudLicenseMountDir,
+	}))
+}
+
 func TestBuildSchedulerPodTemplate_NWorkersMatchesReplicas(t *testing.T) {
 	g := NewWithT(t)
 
@@ -543,4 +596,71 @@ func TestBuildSchedulerPodTemplate_ServiceAccountName(t *testing.T) {
 	result, err = BuildSchedulerPodTemplate(cluster)
 	g.Expect(err).NotTo(HaveOccurred())
 	g.Expect(result.Spec.ServiceAccountName).To(Equal(testExistingServiceAccountName))
+}
+
+func TestBuildSchedulerPodTemplate_CloudLicenseRegisterNode(t *testing.T) {
+	g := NewWithT(t)
+
+	cluster := schedulerCluster(corev1.Container{})
+	cluster.Spec.License.Cloud = &computev1.LicenseCloudSpec{
+		SecretName: "polars-cloud-cert",
+		RegisterNode: &computev1.RegisterNodeSpec{
+			PrivateAddress: computev1.ValueOrSource{
+				ValueFrom: &corev1.EnvVarSource{
+					FieldRef: &corev1.ObjectFieldSelector{FieldPath: "status.hostIP"},
+				},
+			},
+		},
+	}
+
+	result, err := BuildSchedulerPodTemplate(cluster)
+	g.Expect(err).NotTo(HaveOccurred())
+
+	scheduler := result.Spec.Containers[0]
+
+	private, ok := findEnv(scheduler.Env, "PC_CUBLET__license__cloud__register_node__private_address")
+	g.Expect(ok).To(BeTrue())
+	g.Expect(private.ValueFrom.FieldRef.FieldPath).To(Equal("status.hostIP"))
+
+	_, ok = findEnv(scheduler.Env, "PC_CUBLET__license__cloud__register_node__public_address")
+	g.Expect(ok).To(BeFalse())
+}
+
+func TestBuildSchedulerPodTemplate_CloudLicensePublicAddress(t *testing.T) {
+	g := NewWithT(t)
+
+	cluster := schedulerCluster(corev1.Container{})
+	cluster.Spec.License.Cloud = &computev1.LicenseCloudSpec{
+		SecretName: "polars-cloud-cert",
+		RegisterNode: &computev1.RegisterNodeSpec{
+			PrivateAddress: computev1.ValueOrSource{Value: "10.0.0.1"},
+			PublicAddress:  &computev1.ValueOrSource{Value: "compute.example"},
+		},
+	}
+
+	result, err := BuildSchedulerPodTemplate(cluster)
+	g.Expect(err).NotTo(HaveOccurred())
+
+	env := result.Spec.Containers[0].Env
+
+	private, ok := findEnv(env, "PC_CUBLET__license__cloud__register_node__private_address")
+	g.Expect(ok).To(BeTrue())
+	g.Expect(private.Value).To(Equal("10.0.0.1"))
+
+	public, ok := findEnv(env, "PC_CUBLET__license__cloud__register_node__public_address")
+	g.Expect(ok).To(BeTrue())
+	g.Expect(public.Value).To(Equal("compute.example"))
+}
+
+func TestBuildSchedulerPodTemplate_NoRegisterNodeNoAddressEnv(t *testing.T) {
+	g := NewWithT(t)
+
+	cluster := schedulerCluster(corev1.Container{})
+	cluster.Spec.License.Cloud = &computev1.LicenseCloudSpec{SecretName: "polars-cloud-cert"}
+
+	result, err := BuildSchedulerPodTemplate(cluster)
+	g.Expect(err).NotTo(HaveOccurred())
+
+	_, ok := findEnv(result.Spec.Containers[0].Env, "PC_CUBLET__license__cloud__register_node__private_address")
+	g.Expect(ok).To(BeFalse())
 }
