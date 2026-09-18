@@ -10639,10 +10639,14 @@ spec:
                       worker pool.
                     properties:
                       hdfs:
-                        description: HDFS
+                        description: HDFS configures HDFS support for the worker pool.
                         type: object
                       pyiceberg:
-                        description: PyIceberg
+                        description: PyIceberg configures PyIceberg support for the
+                          worker pool. For metadata access, two python packages must
+                          be installed on the worker virtual environment, i.e. hdfs-native
+                          and pyiceberg. Note, the python dependencies are not required
+                          for direct data access.
                         type: object
                     type: object
                   heartBeatInterval:
