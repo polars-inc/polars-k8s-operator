@@ -264,7 +264,7 @@ func TestBuildSchedulerPodTemplate_ComposedRuntime(t *testing.T) {
 
 	requirements, ok := findEnv(scheduler.Env, "PYTHON_REQUIREMENTS")
 	g.Expect(ok).To(BeTrue())
-	g.Expect(requirements.Value).To(Equal("/emptydir/requirements.txt"))
+	g.Expect(requirements.Value).To(Equal("/requirements/requirements.txt"))
 
 	for _, name := range []string{"tmp-data", "release-data"} {
 		_, ok := findVolume(result.Spec.Volumes, name)

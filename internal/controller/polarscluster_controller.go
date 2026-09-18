@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"hash/fnv"
+	"sync"
 
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -303,15 +304,33 @@ func (r *PolarsClusterReconciler) reconcileWorkerPool(ctx context.Context, clust
 
 	var lackingPodCount = int(wp.Replicas) - len(activeManagedPods)
 	if lackingPodCount > 0 {
-		for range lackingPodCount {
-			pod := podTemplate.DeepCopy()
+		created := make([]*corev1.Pod, lackingPodCount)
+		errs := make([]error, lackingPodCount)
 
-			if err := r.Create(ctx, pod); err != nil {
-				return computev1.WorkerPoolStatus{}, "", classifyAPIError("WorkerPodRejected", err)
+		var wg sync.WaitGroup
+		for i := range lackingPodCount {
+			wg.Go(func() {
+				pod := podTemplate.DeepCopy()
+				if err := r.Create(ctx, pod); err != nil {
+					errs[i] = classifyAPIError("WorkerPodRejected", err)
+					return
+				}
+				created[i] = pod
+			})
+		}
+		wg.Wait()
+
+		for _, pod := range created {
+			if pod == nil {
+				continue
 			}
 			r.Recorder.Eventf(cluster, nil, corev1.EventTypeNormal, "WorkerPodCreated", actionCreatePod, "Created worker pod %s", pod.Name)
-
 			activeManagedPods = append(activeManagedPods, *pod)
+		}
+		for _, err := range errs {
+			if err != nil {
+				return computev1.WorkerPoolStatus{}, "", err
+			}
 		}
 	} else if lackingPodCount < 0 {
 		var numPodsToDelete = -lackingPodCount

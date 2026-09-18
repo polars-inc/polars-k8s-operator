@@ -234,6 +234,11 @@ type ComposedRuntimeSpec struct {
 	// "cloudpickle". Defaults to the full extras set.
 	// +optional
 	PolarsExtras string `json:"polarsExtras,omitempty"`
+
+	// ImageVolume mounts the distribution image instead of copying it into an
+	// emptyDir with an init container.
+	// +optional
+	ImageVolume *ImageVolumeSpec `json:"imageVolume,omitempty"`
 }
 
 // ImageSpec identifies a container image.
@@ -253,6 +258,18 @@ type ImageSpec struct {
 	// https://kubernetes.io/docs/concepts/containers/images#updating-images
 	// +optional
 	PullPolicy v1.PullPolicy `json:"pullPolicy,omitempty"`
+}
+
+// ImageVolumeSpec controls how the distribution image reaches the runtime
+// container.
+type ImageVolumeSpec struct {
+	// Enabled mounts the distribution image read-only as an OCI image volume
+	// instead of copying it into an emptyDir with an init container, which
+	// removes the copy and its writeback from pod startup. Only enable it
+	// where the cluster supports image volumes: Kubernetes 1.33 or later with
+	// a container runtime that implements them (containerd 2.1 or later,
+	// CRI-O 1.31 or later). Pods fail to start where it is unsupported.
+	Enabled bool `json:"enabled"`
 }
 
 // ObservatorySpec configures the observatory dashboard.
