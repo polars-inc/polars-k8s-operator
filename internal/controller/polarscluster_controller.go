@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"hash/fnv"
-	"sync"
 
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -14,6 +13,7 @@ import (
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/tools/events"
+	"k8s.io/client-go/util/workqueue"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
@@ -38,6 +38,8 @@ const (
 	actionReconcile = "Reconcile"
 	actionCreatePod = "CreatePod"
 	actionDeletePod = "DeletePod"
+
+	maxConcurrentPodCreations = 4
 )
 
 // PolarsClusterReconciler reconciles a PolarsCluster object
@@ -262,6 +264,7 @@ func (r *PolarsClusterReconciler) reconcileScheduler(ctx context.Context, cluste
 // changed, and returns the resulting observed status plus a message
 // explaining why the pool isn't fully ready when it isn't.
 func (r *PolarsClusterReconciler) reconcileWorkerPool(ctx context.Context, cluster *computev1.PolarsCluster) (computev1.WorkerPoolStatus, string, error) {
+	log := logf.FromContext(ctx)
 	wp := &cluster.Spec.WorkerPool
 
 	podTemplate, err := BuildWorkerPodTemplate(cluster)
@@ -307,18 +310,14 @@ func (r *PolarsClusterReconciler) reconcileWorkerPool(ctx context.Context, clust
 		created := make([]*corev1.Pod, lackingPodCount)
 		errs := make([]error, lackingPodCount)
 
-		var wg sync.WaitGroup
-		for i := range lackingPodCount {
-			wg.Go(func() {
-				pod := podTemplate.DeepCopy()
-				if err := r.Create(ctx, pod); err != nil {
-					errs[i] = classifyAPIError("WorkerPodRejected", err)
-					return
-				}
-				created[i] = pod
-			})
-		}
-		wg.Wait()
+		workqueue.ParallelizeUntil(ctx, maxConcurrentPodCreations, lackingPodCount, func(i int) {
+			pod := podTemplate.DeepCopy()
+			if err := r.Create(ctx, pod); err != nil {
+				errs[i] = classifyAPIError("WorkerPodRejected", err)
+				return
+			}
+			created[i] = pod
+		})
 
 		for _, pod := range created {
 			if pod == nil {
@@ -327,10 +326,11 @@ func (r *PolarsClusterReconciler) reconcileWorkerPool(ctx context.Context, clust
 			r.Recorder.Eventf(cluster, nil, corev1.EventTypeNormal, "WorkerPodCreated", actionCreatePod, "Created worker pod %s", pod.Name)
 			activeManagedPods = append(activeManagedPods, *pod)
 		}
-		for _, err := range errs {
-			if err != nil {
-				return computev1.WorkerPoolStatus{}, "", err
+		if setAside, err := reducePodErrors(errs); err != nil {
+			for _, se := range setAside {
+				log.Error(se, "Could not create worker Pod", "cluster", cluster.Name)
 			}
+			return computev1.WorkerPoolStatus{}, "", err
 		}
 	} else if lackingPodCount < 0 {
 		var numPodsToDelete = -lackingPodCount
