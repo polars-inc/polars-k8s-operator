@@ -251,8 +251,8 @@ func defaultSchedulerReadinessProbe(port int32) *corev1.Probe {
 			TCPSocket: &corev1.TCPSocketAction{Port: intstr.FromInt32(port)},
 		},
 		InitialDelaySeconds: 1,
-		PeriodSeconds:       10,
-		FailureThreshold:    25,
+		PeriodSeconds:       1,
+		FailureThreshold:    250,
 	}
 }
 
@@ -264,8 +264,8 @@ func defaultWorkerReadinessProbe(port int32) *corev1.Probe {
 			GRPC: &corev1.GRPCAction{Port: port},
 		},
 		InitialDelaySeconds: 1,
-		PeriodSeconds:       10,
-		FailureThreshold:    25,
+		PeriodSeconds:       1,
+		FailureThreshold:    250,
 	}
 }
 
