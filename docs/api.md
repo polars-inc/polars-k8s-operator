@@ -196,6 +196,7 @@ _Appears in:_
 | `runtime` _[ImageSpec](#imagespec)_ | Runtime is the Python base image the distribution runs on. Defaults to<br />"python:3.13.9-slim-bookworm". |  | Optional: \{\} <br /> |
 | `requirements` _string_ | Requirements is a requirements.txt to install additional Python<br />packages into the runtime. |  | Optional: \{\} <br /> |
 | `polarsExtras` _string_ | PolarsExtras are the Polars pip extras to install. Must include<br />"cloudpickle". Defaults to the full extras set. |  | Optional: \{\} <br /> |
+| `imageVolume` _[ImageVolumeSpec](#imagevolumespec)_ | ImageVolume mounts the distribution image instead of copying it into an<br />emptyDir with an init container. |  | Optional: \{\} <br /> |
 
 
 #### EphemeralVolumeClaimSpec
@@ -278,6 +279,23 @@ _Appears in:_
 | `repository` _string_ | Repository is the container image name, without a tag. More info:<br />https://kubernetes.io/docs/concepts/containers/images |  | Optional: \{\} <br /> |
 | `tag` _string_ | Tag is the container image tag. |  | Optional: \{\} <br /> |
 | `pullPolicy` _[PullPolicy](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.36/#pullpolicy-v1-core)_ | PullPolicy is the image pull policy: one of Always, Never, or<br />IfNotPresent. Defaults to Always if the tag is "latest", or<br />IfNotPresent otherwise. More info:<br />https://kubernetes.io/docs/concepts/containers/images#updating-images |  | Optional: \{\} <br /> |
+
+
+#### ImageVolumeSpec
+
+
+
+ImageVolumeSpec controls how the distribution image reaches the runtime
+container.
+
+
+
+_Appears in:_
+- [ComposedRuntimeSpec](#composedruntimespec)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `enabled` _boolean_ | Enabled mounts the distribution image read-only as an OCI image volume<br />instead of copying it into an emptyDir with an init container, which<br />removes the copy and its writeback from pod startup. Only enable it<br />where the cluster supports image volumes: Kubernetes 1.33 or later with<br />a container runtime that implements them (containerd 2.1 or later,<br />CRI-O 1.31 or later). Pods fail to start where it is unsupported. |  |  |
 
 
 #### LicenseOnPremEnterpriseSpec

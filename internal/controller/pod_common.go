@@ -21,8 +21,11 @@ const (
 
 	releaseDataVolumeName     = "release-data"
 	releaseDataMountPath      = "/emptydir"
+	releaseDataImageSubPath   = "opt"
 	tmpDataVolumeName         = "tmp-data"
-	requirementsPath          = "/emptydir/requirements.txt"
+	requirementsVolumeName    = "requirements-data"
+	requirementsMountPath     = "/requirements"
+	requirementsPath          = requirementsMountPath + "/requirements.txt"
 	enterpriseLicenseVolume   = "license"
 	enterpriseLicenseMountDir = "/mnt/license/"
 	enterpriseLicensePath     = "/mnt/license/license.json"
@@ -151,16 +154,7 @@ func composedRuntimeConfig(cluster *computev1.PolarsCluster) (initContainers []c
 		extras = defaultPolarsExtras
 	}
 
-	initContainers = []corev1.Container{{
-		Name:            "release",
-		Image:           fmt.Sprintf("%s:%s", distRepository, distTag(cluster)),
-		ImagePullPolicy: distPullPolicy,
-		Command:         []string{"/bin/cp"},
-		Args:            []string{"-a", "/opt/.", releaseDataMountPath},
-		VolumeMounts: []corev1.VolumeMount{
-			{Name: releaseDataVolumeName, MountPath: releaseDataMountPath},
-		},
-	}}
+	distImage := fmt.Sprintf("%s:%s", distRepository, distTag(cluster))
 
 	container = corev1.Container{
 		Image:           fmt.Sprintf("%s:%s", runtimeRepository, runtimeTag),
@@ -176,13 +170,32 @@ func composedRuntimeConfig(cluster *computev1.PolarsCluster) (initContainers []c
 		{Name: "UV_PATH", Value: releaseDataMountPath + "/bin/uv"},
 	}
 
+	release := corev1.Volume{Name: releaseDataVolumeName}
+	releaseMount := corev1.VolumeMount{Name: releaseDataVolumeName, MountPath: releaseDataMountPath}
+
+	if iv := composed.ImageVolume; iv != nil && iv.Enabled {
+		release.Image = &corev1.ImageVolumeSource{Reference: distImage, PullPolicy: distPullPolicy}
+		releaseMount.SubPath = releaseDataImageSubPath
+		releaseMount.ReadOnly = true
+	} else {
+		release.EmptyDir = &corev1.EmptyDirVolumeSource{}
+		initContainers = append(initContainers, corev1.Container{
+			Name:            "release",
+			Image:           distImage,
+			ImagePullPolicy: distPullPolicy,
+			Command:         []string{"/bin/cp"},
+			Args:            []string{"-a", "/opt/.", releaseDataMountPath},
+			VolumeMounts:    []corev1.VolumeMount{releaseMount},
+		})
+	}
+
 	volumes = []corev1.Volume{
 		{Name: tmpDataVolumeName, VolumeSource: corev1.VolumeSource{EmptyDir: &corev1.EmptyDirVolumeSource{}}},
-		{Name: releaseDataVolumeName, VolumeSource: corev1.VolumeSource{EmptyDir: &corev1.EmptyDirVolumeSource{}}},
+		release,
 	}
 	mounts = []corev1.VolumeMount{
 		{Name: tmpDataVolumeName, MountPath: "/tmp"},
-		{Name: releaseDataVolumeName, MountPath: releaseDataMountPath},
+		releaseMount,
 	}
 
 	if composed.Requirements != "" {
@@ -195,9 +208,14 @@ func composedRuntimeConfig(cluster *computev1.PolarsCluster) (initContainers []c
 				{Name: "PYTHON_REQUIREMENTS_CONTENT", Value: composed.Requirements},
 			},
 			VolumeMounts: []corev1.VolumeMount{
-				{Name: releaseDataVolumeName, MountPath: releaseDataMountPath},
+				{Name: requirementsVolumeName, MountPath: requirementsMountPath},
 			},
 		})
+		volumes = append(volumes, corev1.Volume{
+			Name:         requirementsVolumeName,
+			VolumeSource: corev1.VolumeSource{EmptyDir: &corev1.EmptyDirVolumeSource{}},
+		})
+		mounts = append(mounts, corev1.VolumeMount{Name: requirementsVolumeName, MountPath: requirementsMountPath})
 		env = append(env, corev1.EnvVar{Name: "PYTHON_REQUIREMENTS", Value: requirementsPath})
 	}
 

@@ -337,6 +337,57 @@ var _ = Describe("Manager", Ordered, func() {
 			Expect(checkpointURL).To(Equal(checkpointDataS3Endpoint))
 		})
 
+		It("should mount the distribution image read-only when imageVolume is enabled, and copy it otherwise", func() {
+			DeferCleanup(func() {
+				for _, name := range []string{imageVolumeClusterName, imageCopyClusterName} {
+					cmd := exec.Command("kubectl", "delete", "polarscluster", name,
+						"-n", clusterNamespace, "--ignore-not-found")
+					_, _ = utils.Run(cmd)
+				}
+			})
+
+			By("creating one PolarsCluster with imageVolume enabled and one leaving it unset")
+			Expect(kubectlApply(mustMarshalManifest(
+				composedPolarsCluster(clusterNamespace, imageVolumeClusterName, true)))).To(Succeed())
+			Expect(kubectlApply(mustMarshalManifest(
+				composedPolarsCluster(clusterNamespace, imageCopyClusterName, false)))).To(Succeed())
+
+			mountedPod := schedulerPodNameForCluster(imageVolumeClusterName)
+			copiedPod := schedulerPodNameForCluster(imageCopyClusterName)
+
+			By("waiting for both scheduler pods to be created")
+			for _, pod := range []string{mountedPod, copiedPod} {
+				Eventually(func(g Gomega) {
+					name, err := podJSONPath(clusterNamespace, pod, "{.metadata.name}")
+					g.Expect(err).NotTo(HaveOccurred())
+					g.Expect(name).To(Equal(pod))
+				}, time.Minute, time.Second).Should(Succeed())
+			}
+
+			By("verifying the mounted pod has no release init container")
+			Expect(podJSONPath(clusterNamespace, mountedPod, "{.spec.initContainers[*].name}")).
+				NotTo(ContainSubstring("release"))
+
+			By("verifying release-data is an image volume referencing the dist image")
+			Expect(podJSONPath(clusterNamespace, mountedPod,
+				"{.spec.volumes[?(@.name=='release-data')].image.reference}")).
+				To(Equal(composedDistRepository + ":" + composedDistTag))
+
+			By("verifying the mount exposes the image's /opt read-only")
+			Expect(podJSONPath(clusterNamespace, mountedPod,
+				"{.spec.containers[0].volumeMounts[?(@.name=='release-data')].subPath}")).To(Equal("opt"))
+			Expect(podJSONPath(clusterNamespace, mountedPod,
+				"{.spec.containers[0].volumeMounts[?(@.name=='release-data')].readOnly}")).To(Equal("true"))
+
+			By("verifying the copied pod still uses the release init container and an emptyDir")
+			Expect(podJSONPath(clusterNamespace, copiedPod, "{.spec.initContainers[*].name}")).
+				To(ContainSubstring("release"))
+			Expect(podJSONPath(clusterNamespace, copiedPod,
+				"{.spec.volumes[?(@.name=='release-data')].image.reference}")).To(BeEmpty())
+			Expect(podJSONPath(clusterNamespace, copiedPod,
+				"{.spec.containers[0].volumeMounts[?(@.name=='release-data')].subPath}")).To(BeEmpty())
+		})
+
 		It("should default the scheduler and worker pods to the namespace's default ServiceAccount when serviceAccount is unset", func() {
 			schedulerSA, err := podServiceAccountName(clusterNamespace, schedulerPodNameForCluster(e2ePolarsClusterName))
 			Expect(err).NotTo(HaveOccurred())
@@ -858,8 +909,34 @@ const realImageLicenseSecretKey = "license.json"
 const anonymousResultsS3Endpoint = "s3://polars-e2e-anonymous-results/results"
 const checkpointDataS3Endpoint = "s3://polars-e2e-checkpoint-data/checkpoints"
 
+const imageVolumeClusterName = "e2e-cluster-image-volume"
+const imageCopyClusterName = "e2e-cluster-image-copy"
+const composedDistRepository = "busybox"
+const composedDistTag = "latest"
+
 const serviceAccountE2EClusterName = "e2e-cluster-serviceaccount"
 const existingWorkerServiceAccountName = "e2e-existing-worker-sa"
+
+func composedPolarsCluster(ns, name string, imageVolume bool) *computev1.PolarsCluster {
+	cluster := busyboxPolarsCluster(ns, name, 1)
+	cluster.Spec.Runtime = &computev1.RuntimeSpec{
+		Composed: computev1.ComposedRuntimeSpec{
+			Dist: &computev1.ImageSpec{
+				Repository: composedDistRepository,
+				Tag:        composedDistTag,
+				PullPolicy: corev1.PullIfNotPresent,
+			},
+		},
+	}
+	if imageVolume {
+		cluster.Spec.Runtime.Composed.ImageVolume = &computev1.ImageVolumeSpec{Enabled: true}
+	}
+	cluster.Spec.Scheduler.PodTemplate = &corev1.PodTemplateSpec{
+		Spec: corev1.PodSpec{Containers: []corev1.Container{{Name: "scheduler"}}},
+	}
+	cluster.Spec.WorkerPool.PodTemplate = nil
+	return cluster
+}
 
 func mustMarshalManifest(cluster *computev1.PolarsCluster) string {
 	out, err := yaml.Marshal(cluster)
@@ -1000,6 +1077,11 @@ func realImageLicenseFile() string {
 func selectorForWorkerPool(ns, clusterName string) (string, error) {
 	cmd := exec.Command("kubectl", "get", "polarscluster", clusterName, "-n", ns,
 		"-o", "jsonpath={.status.workerPool.selector}")
+	return utils.Run(cmd)
+}
+
+func podJSONPath(ns, pod, path string) (string, error) {
+	cmd := exec.Command("kubectl", "get", "pod", pod, "-n", ns, "-o", "jsonpath="+path)
 	return utils.Run(cmd)
 }
 

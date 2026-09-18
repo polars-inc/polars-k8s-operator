@@ -1,6 +1,7 @@
 package controller
 
 import (
+	"errors"
 	"fmt"
 
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -34,4 +35,30 @@ func classifyAPIError(reason string, err error) error {
 		return &specError{reason: reason, err: err}
 	}
 	return err
+}
+
+func reducePodErrors(errs []error) (setAsideSpecErrs []error, err error) {
+	var transient, spec []error
+	for _, e := range errs {
+		if e == nil {
+			continue
+		}
+		var se *specError
+		if errors.As(e, &se) {
+			spec = append(spec, e)
+			continue
+		}
+		transient = append(transient, e)
+	}
+
+	switch {
+	case len(transient) > 0:
+		return spec, errors.Join(transient...)
+	case len(spec) > 0:
+		var first *specError
+		_ = errors.As(spec[0], &first)
+		return nil, &specError{reason: first.reason, err: errors.Join(spec...)}
+	default:
+		return nil, nil
+	}
 }
