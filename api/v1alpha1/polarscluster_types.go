@@ -16,7 +16,7 @@ import (
 const DefaultVersion = "0.7.1"
 
 // PolarsClusterSpec defines the desired state of PolarsCluster
-// +kubebuilder:validation:XValidation:rule="(!has(self.license.onPremEnterprise) && !has(self.license.cloud)) || (has(self.acceptEula) && self.acceptEula)",message="acceptEula must be true when using the On-Prem Enterprise or Cloud license"
+// +kubebuilder:validation:XValidation:rule="!has(self.license.onPremEnterprise) || (has(self.acceptEula) && self.acceptEula)",message="acceptEula must be true when using the On-Prem Enterprise license"
 type PolarsClusterSpec struct {
 	// Telemetry configures exporting the cluster's OTLP traces and metrics.
 	// +optional
