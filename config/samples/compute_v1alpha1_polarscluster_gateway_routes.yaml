@@ -1,0 +1,39 @@
+# Expose the scheduler and observatory through an existing Gateway API
+# Gateway, each on its own hostname. The operator creates and owns a
+# GRPCRoute (scheduler) and an HTTPRoute (observatory), named after their
+# Services, and reports their acceptance in the RoutesReady condition.
+#
+# Requires the Gateway API v1.1+ CRDs to be installed before the operator
+# starts, and a Gateway whose listener allows routes from this namespace.
+apiVersion: compute.pola.rs/v1alpha1
+kind: PolarsCluster
+metadata:
+  name: polars-gateway-routes
+spec:
+  acceptEula: true
+  license:
+    onPremEnterprise:
+      secretName: license
+      secretProperty: license.json
+  runtime:
+    composed: {}
+  scheduler:
+    services:
+      scheduler:
+        route:
+          parentRefs:
+            - name: compute
+              namespace: gateway-system
+              sectionName: https
+          hostnames:
+            - polars-scheduler.example.com
+      observatory:
+        route:
+          parentRefs:
+            - name: compute
+              namespace: gateway-system
+              sectionName: https
+          hostnames:
+            - polars-observatory.example.com
+  workerPool:
+    replicas: 2

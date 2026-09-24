@@ -137,15 +137,15 @@ func computedSchedulerPodSpec(cluster *computev1.PolarsCluster, containerName st
 	container := runtimeContainer
 	container.Name = containerName
 	container.Ports = []corev1.ContainerPort{
-		{Name: "sched", ContainerPort: 5051, Protocol: corev1.ProtocolTCP},
+		{Name: "sched", ContainerPort: schedulerPort, Protocol: corev1.ProtocolTCP},
 		{Name: "worker-sched", ContainerPort: 5050, Protocol: corev1.ProtocolTCP},
 		{Name: "obser-grpc", ContainerPort: 5049, Protocol: corev1.ProtocolTCP},
-		{Name: "obser-rest", ContainerPort: 3001, Protocol: corev1.ProtocolTCP},
+		{Name: "obser-rest", ContainerPort: observatoryRESTPort, Protocol: corev1.ProtocolTCP},
 	}
 	container.Env = env
 	container.VolumeMounts = volumeMounts
 	if injectProbe {
-		container.ReadinessProbe = defaultSchedulerReadinessProbe(5051)
+		container.ReadinessProbe = defaultSchedulerReadinessProbe(schedulerPort)
 	}
 
 	return corev1.PodSpec{

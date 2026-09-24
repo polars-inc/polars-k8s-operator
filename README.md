@@ -7,7 +7,8 @@ Kubernetes operator for managing Polars Clusters
 This operator manages `PolarsCluster` custom resources, each running a
 [Polars On-Premises](https://docs.pola.rs/polars-on-premises/) cluster
 (scheduler + worker pool) on Kubernetes. It composes the scheduler/worker
-Deployments, Services, licensing, and storage config from a single CR.
+Deployments, Services, optional Gateway API routes, licensing, and storage
+config from a single CR.
 
 See `config/samples/` for runnable examples, and [docs/api.md](docs/api.md) for the full field reference.
 

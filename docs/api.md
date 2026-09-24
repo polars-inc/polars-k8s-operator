@@ -216,6 +216,25 @@ _Appears in:_
 | `size` _[Quantity](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.36/#quantity-resource-api)_ | Size of the volume requested by the claim. More info:<br />https://kubernetes.io/docs/concepts/storage/persistent-volumes#capacity |  |  |
 
 
+#### ExposedServiceConfig
+
+
+
+ExposedServiceConfig configures a Service the operator manages and the
+optional Gateway API route in front of it.
+
+
+
+_Appears in:_
+- [SchedulerServicesSpec](#schedulerservicesspec)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `type` _[ServiceType](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.36/#servicetype-v1-core)_ | Type determines how the Service is exposed: ClusterIP, NodePort, or<br />LoadBalancer. More info:<br />https://kubernetes.io/docs/concepts/services-networking/service/#publishing-services-service-types | ClusterIP | Optional: \{\} <br /> |
+| `annotations` _object (keys:string, values:string)_ | Annotations to add to the Service object. Used by some controllers<br />to set up TLS termination or load balancers. |  | Optional: \{\} <br /> |
+| `route` _[RouteSpec](#routespec)_ | Route attaches the Service to Gateway API Gateways. The operator owns<br />the route, names it after the Service, and makes the Service its only<br />backend. Requires the Gateway API v1.1+ CRDs to be installed before<br />the operator starts. |  | Optional: \{\} <br /> |
+
+
 #### ExtrasSpec
 
 
@@ -599,6 +618,25 @@ _Appears in:_
 | `publicAddress` _[ValueOrSource](#valueorsource)_ | PublicAddress is the address reachable from outside it. Leaving it<br />unset withholds the node's address from the control plane, which<br />rejects that for an interactive cluster. |  | ExactlyOneOf: [value valueFrom] <br />Optional: \{\} <br /> |
 
 
+#### RouteSpec
+
+
+
+RouteSpec configures a Gateway API route the operator manages.
+
+
+
+_Appears in:_
+- [ExposedServiceConfig](#exposedserviceconfig)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `parentRefs` _ParentReference array_ | ParentRefs are the Gateways, or Gateway listeners, the route attaches<br />to. More info:<br />https://gateway-api.sigs.k8s.io/reference/spec/#parentreference |  | MaxItems: 32 <br />MinItems: 1 <br />Required: \{\} <br /> |
+| `hostnames` _Hostname array_ | Hostnames the route matches against the request's Host header or SNI. |  | MaxItems: 16 <br />Optional: \{\} <br /> |
+| `labels` _object (keys:string, values:string)_ | Labels to add to the route. |  | Optional: \{\} <br /> |
+| `annotations` _object (keys:string, values:string)_ | Annotations to add to the route. |  | Optional: \{\} <br /> |
+
+
 #### RuntimeSpec
 
 
@@ -629,9 +667,9 @@ _Appears in:_
 
 | Field | Description | Default | Validation |
 | --- | --- | --- | --- |
-| `scheduler` _[ServiceConfig](#serviceconfig)_ | Scheduler exposes the client-facing scheduler port (5051). |  | Optional: \{\} <br /> |
+| `scheduler` _[ExposedServiceConfig](#exposedserviceconfig)_ | Scheduler exposes the client-facing scheduler port (5051). Its route<br />is a GRPCRoute. |  | Optional: \{\} <br /> |
 | `internal` _[ServiceConfig](#serviceconfig)_ | Internal exposes the worker-facing scheduler (5050) and observatory<br />gRPC (5049) ports. |  | Optional: \{\} <br /> |
-| `observatory` _[ServiceConfig](#serviceconfig)_ | Observatory exposes the observatory dashboard REST port (3001). |  | Optional: \{\} <br /> |
+| `observatory` _[ExposedServiceConfig](#exposedserviceconfig)_ | Observatory exposes the observatory dashboard REST port (3001). Its<br />route is an HTTPRoute. |  | Optional: \{\} <br /> |
 
 
 #### SchedulerSpec
@@ -695,6 +733,7 @@ ServiceConfig configures a single Service the operator manages.
 
 
 _Appears in:_
+- [ExposedServiceConfig](#exposedserviceconfig)
 - [SchedulerServicesSpec](#schedulerservicesspec)
 
 | Field | Description | Default | Validation |

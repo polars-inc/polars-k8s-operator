@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 
 	. "github.com/onsi/ginkgo/v2" // nolint:revive,staticcheck
@@ -155,6 +156,14 @@ func GetProjectDir() (string, error) {
 	}
 	wd = strings.ReplaceAll(wd, "/test/e2e", "")
 	return wd, nil
+}
+
+func GatewayAPICRDDir() (string, error) {
+	out, err := exec.Command("go", "list", "-m", "-f", "{{.Dir}}", "sigs.k8s.io/gateway-api").Output()
+	if err != nil {
+		return "", fmt.Errorf("failed to locate the sigs.k8s.io/gateway-api module: %w", err)
+	}
+	return filepath.Join(strings.TrimSpace(string(out)), "config", "crd", "standard"), nil
 }
 
 // UncommentCode searches for target in the file and remove the comment prefix
