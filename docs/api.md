@@ -298,6 +298,24 @@ _Appears in:_
 | `enabled` _boolean_ | Enabled mounts the distribution image read-only as an OCI image volume<br />instead of copying it into an emptyDir with an init container, which<br />removes the copy and its writeback from pod startup. Only enable it<br />where the cluster supports image volumes: Kubernetes 1.33 or later with<br />a container runtime that implements them (containerd 2.1 or later,<br />CRI-O 1.31 or later). Pods fail to start where it is unsupported. |  |  |
 
 
+#### LicenseCloudSpec
+
+
+
+LicenseCloudSpec reads the cloud license's mTLS certificate from a
+Secret.
+
+
+
+_Appears in:_
+- [LicenseSpec](#licensespec)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `secretName` _string_ | SecretName is the name of a Secret, in the same namespace, containing<br />keys tls.crt, tls.key, and ca.crt. |  |  |
+| `registerNode` _[RegisterNodeSpec](#registernodespec)_ | RegisterNode advertises this node's address to the control plane. |  | Optional: \{\} <br /> |
+
+
 #### LicenseOnPremEnterpriseSpec
 
 
@@ -344,7 +362,7 @@ LicenseSpec selects exactly one way the cluster's Polars license is
 provided.
 
 _Validation:_
-- ExactlyOneOf: [onPrem onPremEnterprise]
+- ExactlyOneOf: [onPrem onPremEnterprise cloud]
 
 _Appears in:_
 - [PolarsClusterSpec](#polarsclusterspec)
@@ -353,6 +371,7 @@ _Appears in:_
 | --- | --- | --- | --- |
 | `onPrem` _[LicenseOnPremSpec](#licenseonpremspec)_ | OnPrem licenses the cluster with Polars workspace client credentials. |  | Optional: \{\} <br /> |
 | `onPremEnterprise` _[LicenseOnPremEnterpriseSpec](#licenseonprementerprisespec)_ | OnPremEnterprise licenses the cluster from a Secret holding an<br />On-Prem Enterprise license key; requires acceptEula to be true. |  | Optional: \{\} <br /> |
+| `cloud` _[LicenseCloudSpec](#licensecloudspec)_ | Cloud licenses is only used by Polars Cloud internally |  | Optional: \{\} <br /> |
 
 
 #### LineageSpec
@@ -518,7 +537,7 @@ _Appears in:_
 | `acceptEula` _boolean_ | AcceptEula must be set to true to use the On-Prem Enterprise license. | false | Optional: \{\} <br /> |
 | `version` _string_ | Version is the Polars on-premises release to run, as a semantic<br />version. The operator enforces its minimum supported release at<br />reconcile time. Version is used as the composed runtime's dist tag<br />unless runtime.composed.dist.tag overrides it; use that override for<br />non-release image tags. | 0.7.1 | MaxLength: 63 <br />Pattern: `^(0\|[1-9]\d*)\.(0\|[1-9]\d*)\.(0\|[1-9]\d*)(?:-((?:0\|[1-9]\d*\|\d*[a-zA-Z-][0-9a-zA-Z-]*)(?:\.(?:0\|[1-9]\d*\|\d*[a-zA-Z-][0-9a-zA-Z-]*))*))?(?:\+([0-9a-zA-Z-]+(?:\.[0-9a-zA-Z-]+)*))?$` <br />Optional: \{\} <br /> |
 | `runtime` _[RuntimeSpec](#runtimespec)_ | Runtime composes the scheduler/worker containers from the Polars<br />distribution and a Python base image. When nil, the pod templates must<br />bring their own image. |  | Optional: \{\} <br /> |
-| `license` _[LicenseSpec](#licensespec)_ | License selects how the cluster's Polars license is provided. |  | ExactlyOneOf: [onPrem onPremEnterprise] <br /> |
+| `license` _[LicenseSpec](#licensespec)_ | License selects how the cluster's Polars license is provided. |  | ExactlyOneOf: [onPrem onPremEnterprise cloud] <br /> |
 | `allowLocalSinks` _boolean_ | AllowLocalSinks permits workers to write query results to local disk.<br />Disabling this prevents all local writes; it is not possible to allow<br />only specific sink locations. Users can alternatively configure sinks<br />that write to object storage. More info:<br />https://docs.pola.rs/user-guide/io/cloud-storage/#writing-to-cloud-storage | true |  |
 | `allowLocalScans` _boolean_ | AllowLocalScans permits workers to read query inputs from local disk.<br />Disabling this prevents all local reads; it is not possible to allow<br />only specific scan locations. Users can alternatively configure scans<br />that read from object storage. More info:<br />https://docs.pola.rs/user-guide/io/cloud-storage/#reading-from-cloud-storage | false |  |
 | `allowAnonymousUsers` _boolean_ | AllowAnonymousUsers permits queries without a username. When false,<br />all queries must be sent with a set username. | true |  |
@@ -561,6 +580,23 @@ _Appears in:_
 _Appears in:_
 - [ExtrasSpec](#extrasspec)
 
+
+
+#### RegisterNodeSpec
+
+
+
+RegisterNodeSpec is where a node tells the control plane it can be reached.
+
+
+
+_Appears in:_
+- [LicenseCloudSpec](#licensecloudspec)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `privateAddress` _[ValueOrSource](#valueorsource)_ | PrivateAddress is the address reachable from inside the deployment,<br />commonly a field reference to status.podIP or status.hostIP. |  | ExactlyOneOf: [value valueFrom] <br /> |
+| `publicAddress` _[ValueOrSource](#valueorsource)_ | PublicAddress is the address reachable from outside it. Leaving it<br />unset withholds the node's address from the control plane, which<br />rejects that for an interactive cluster. |  | ExactlyOneOf: [value valueFrom] <br />Optional: \{\} <br /> |
 
 
 #### RuntimeSpec
@@ -806,6 +842,7 @@ _Validation:_
 
 _Appears in:_
 - [LicenseOnPremSpec](#licenseonpremspec)
+- [RegisterNodeSpec](#registernodespec)
 - [TelemetrySpec](#telemetryspec)
 
 | Field | Description | Default | Validation |

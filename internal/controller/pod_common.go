@@ -30,6 +30,9 @@ const (
 	enterpriseLicenseMountDir = "/mnt/license/"
 	enterpriseLicensePath     = "/mnt/license/license.json"
 
+	cloudLicenseVolume   = "cloud-license"
+	cloudLicenseMountDir = "/mnt/cloud_license/"
+
 	defaultHeartBeatInterval = "5s"
 	defaultCheckpointPeriod  = "20m"
 	defaultMetricsBytesTotal = int64(104857600)
@@ -76,6 +79,10 @@ func distTag(cluster *computev1.PolarsCluster) string {
 // can manage.
 var minSupportedVersion = utilversion.MustParseSemantic("0.7.1")
 
+// 0.8.0 is where cublet gained [license.cloud]; older releases reject the
+// unknown section instead of ignoring it.
+var minCloudLicenseVersion = utilversion.MustParseSemantic("0.8.0")
+
 // clusterVersion parses spec.version and enforces the supported minimum,
 // returning nil when the version is unset. The schema validates the format
 // at admission; this also covers objects admitted under an older schema.
@@ -89,6 +96,9 @@ func clusterVersion(cluster *computev1.PolarsCluster) (*utilversion.Version, err
 	}
 	if v.LessThan(minSupportedVersion) {
 		return nil, fmt.Errorf("spec.version %q is not supported: this operator requires at least %s", cluster.Spec.Version, minSupportedVersion)
+	}
+	if cluster.Spec.License.Cloud != nil && v.LessThan(minCloudLicenseVersion) {
+		return nil, fmt.Errorf("spec.version %q does not support the cloud license: it requires at least %s", cluster.Spec.Version, minCloudLicenseVersion)
 	}
 	return v, nil
 }
@@ -239,6 +249,48 @@ func enterpriseLicenseConfig(cluster *computev1.PolarsCluster) ([]corev1.Volume,
 		},
 	}}
 	mounts := []corev1.VolumeMount{{Name: enterpriseLicenseVolume, MountPath: enterpriseLicenseMountDir}}
+	return volumes, mounts
+}
+
+func cloudLicenseEnv(license *envBuilder, registerNode *computev1.RegisterNodeSpec) {
+	cloud := license.Section("cloud")
+	cloud.String("cert_dir", cloudLicenseMountDir)
+	cloud.Bool("notify_query_submitted", true)
+	cloud.Bool("enable_query_polling", false)
+
+	if registerNode == nil {
+		return
+	}
+	register := cloud.Section("register_node")
+	register.ValueOrSource("private_address", registerNode.PrivateAddress)
+	if registerNode.PublicAddress != nil {
+		register.ValueOrSource("public_address", *registerNode.PublicAddress)
+	}
+}
+
+// cloudLicenseConfig returns the Secret volume + mount for the cloud
+// license's mTLS certificate, remapping the Secret's standard TLS keys to
+// the filenames pc-cublet expects inside cert_dir.
+func cloudLicenseConfig(cluster *computev1.PolarsCluster) ([]corev1.Volume, []corev1.VolumeMount) {
+	cloud := cluster.Spec.License.Cloud
+	if cloud == nil {
+		return nil, nil
+	}
+
+	volumes := []corev1.Volume{{
+		Name: cloudLicenseVolume,
+		VolumeSource: corev1.VolumeSource{
+			Secret: &corev1.SecretVolumeSource{
+				SecretName: cloud.SecretName,
+				Items: []corev1.KeyToPath{
+					{Key: "tls.crt", Path: "certificate.pem"},
+					{Key: "tls.key", Path: "private_key.pem"},
+					{Key: "ca.crt", Path: "ca_cert.pem"},
+				},
+			},
+		},
+	}}
+	mounts := []corev1.VolumeMount{{Name: cloudLicenseVolume, MountPath: cloudLicenseMountDir}}
 	return volumes, mounts
 }
 
