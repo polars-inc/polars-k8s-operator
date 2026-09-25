@@ -16,8 +16,10 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/envtest"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
+	gatewayv1 "sigs.k8s.io/gateway-api/apis/v1"
 
 	computev1 "github.com/polars-inc/polars-k8s-operator/api/v1alpha1"
+	"github.com/polars-inc/polars-k8s-operator/test/utils"
 	// +kubebuilder:scaffold:imports
 )
 
@@ -46,12 +48,20 @@ var _ = BeforeSuite(func() {
 	var err error
 	err = computev1.AddToScheme(scheme.Scheme)
 	Expect(err).NotTo(HaveOccurred())
+	Expect(gatewayv1.Install(scheme.Scheme)).To(Succeed())
 
 	// +kubebuilder:scaffold:scheme
 
+	gatewayAPICRDDir, err := utils.GatewayAPICRDDir()
+	Expect(err).NotTo(HaveOccurred())
+
 	By("bootstrapping test environment")
 	testEnv = &envtest.Environment{
-		CRDDirectoryPaths:     []string{filepath.Join("..", "..", "config", "crd", "bases")},
+		CRDDirectoryPaths: []string{
+			filepath.Join("..", "..", "config", "crd", "bases"),
+			filepath.Join(gatewayAPICRDDir, "gateway.networking.k8s.io_grpcroutes.yaml"),
+			filepath.Join(gatewayAPICRDDir, "gateway.networking.k8s.io_httproutes.yaml"),
+		},
 		ErrorIfCRDPathMissing: true,
 	}
 

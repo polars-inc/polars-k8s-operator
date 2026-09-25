@@ -18,6 +18,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/metrics/filters"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
+	gatewayv1 "sigs.k8s.io/gateway-api/apis/v1"
 
 	computev1 "github.com/polars-inc/polars-k8s-operator/api/v1alpha1"
 	"github.com/polars-inc/polars-k8s-operator/internal/controller"
@@ -33,6 +34,7 @@ func init() {
 	utilruntime.Must(clientgoscheme.AddToScheme(scheme))
 
 	utilruntime.Must(computev1.AddToScheme(scheme))
+	utilruntime.Must(gatewayv1.Install(scheme))
 	// +kubebuilder:scaffold:scheme
 }
 
@@ -162,10 +164,20 @@ func main() {
 		os.Exit(1)
 	}
 
+	gatewayAPIEnabled, err := controller.GatewayAPIInstalled(mgr.GetRESTMapper())
+	if err != nil {
+		setupLog.Error(err, "Failed to discover the Gateway API")
+		os.Exit(1)
+	}
+	if !gatewayAPIEnabled {
+		setupLog.Info("Gateway API route CRDs are not installed; restart the operator after installing them to manage routes")
+	}
+
 	if err := (&controller.PolarsClusterReconciler{
-		Client:   mgr.GetClient(),
-		Scheme:   mgr.GetScheme(),
-		Recorder: mgr.GetEventRecorder("polarscluster-controller"),
+		Client:            mgr.GetClient(),
+		Scheme:            mgr.GetScheme(),
+		Recorder:          mgr.GetEventRecorder("polarscluster-controller"),
+		GatewayAPIEnabled: gatewayAPIEnabled,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "Failed to create controller", "controller", "polarscluster")
 		os.Exit(1)

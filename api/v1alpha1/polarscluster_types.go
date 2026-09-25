@@ -5,6 +5,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	gatewayv1 "sigs.k8s.io/gateway-api/apis/v1"
 )
 
 // EDIT THIS FILE!  THIS IS SCAFFOLDING FOR YOU TO OWN!
@@ -461,18 +462,59 @@ type ServiceAccountSpec struct {
 // SchedulerServicesSpec configures the Services exposing the scheduler's
 // ports.
 type SchedulerServicesSpec struct {
-	// Scheduler exposes the client-facing scheduler port (5051).
+	// Scheduler exposes the client-facing scheduler port (5051). Its route
+	// is a GRPCRoute.
 	// +optional
-	Scheduler *ServiceConfig `json:"scheduler,omitempty"`
+	Scheduler *ExposedServiceConfig `json:"scheduler,omitempty"`
 
 	// Internal exposes the worker-facing scheduler (5050) and observatory
 	// gRPC (5049) ports.
 	// +optional
 	Internal *ServiceConfig `json:"internal,omitempty"`
 
-	// Observatory exposes the observatory dashboard REST port (3001).
+	// Observatory exposes the observatory dashboard REST port (3001). Its
+	// route is an HTTPRoute.
 	// +optional
-	Observatory *ServiceConfig `json:"observatory,omitempty"`
+	Observatory *ExposedServiceConfig `json:"observatory,omitempty"`
+}
+
+// ExposedServiceConfig configures a Service the operator manages and the
+// optional Gateway API route in front of it.
+type ExposedServiceConfig struct {
+	ServiceConfig `json:",inline"`
+
+	// Route attaches the Service to Gateway API Gateways. The operator owns
+	// the route, names it after the Service, and makes the Service its only
+	// backend. Requires the Gateway API v1.1+ CRDs to be installed before
+	// the operator starts.
+	// +optional
+	Route *RouteSpec `json:"route,omitempty"`
+}
+
+// RouteSpec configures a Gateway API route the operator manages.
+type RouteSpec struct {
+	// ParentRefs are the Gateways, or Gateway listeners, the route attaches
+	// to. More info:
+	// https://gateway-api.sigs.k8s.io/reference/spec/#parentreference
+	// +kubebuilder:validation:MinItems=1
+	// +kubebuilder:validation:MaxItems=32
+	// +listType=atomic
+	// +required
+	ParentRefs []gatewayv1.ParentReference `json:"parentRefs"`
+
+	// Hostnames the route matches against the request's Host header or SNI.
+	// +kubebuilder:validation:MaxItems=16
+	// +listType=atomic
+	// +optional
+	Hostnames []gatewayv1.Hostname `json:"hostnames,omitempty"`
+
+	// Labels to add to the route.
+	// +optional
+	Labels map[string]string `json:"labels,omitempty"`
+
+	// Annotations to add to the route.
+	// +optional
+	Annotations map[string]string `json:"annotations,omitempty"`
 }
 
 // ServiceConfig configures a single Service the operator manages.
@@ -770,7 +812,7 @@ type PolarsClusterStatus struct {
 
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
-// +kubebuilder:printcolumn:name="Ready",type=string,JSONPath=".status.conditions[?(@.type=='Ready')].status",description="Whether the scheduler and worker pool are both ready"
+// +kubebuilder:printcolumn:name="Ready",type=string,JSONPath=".status.conditions[?(@.type=='Ready')].status",description="Whether the scheduler, worker pool, and any requested routes are ready"
 // +kubebuilder:printcolumn:name="Scheduler",type=string,JSONPath=".status.conditions[?(@.type=='SchedulerReady')].status",description="Whether the scheduler pod is ready"
 // +kubebuilder:printcolumn:name="Workers",type=integer,JSONPath=".spec.workerPool.replicas",description="Desired worker replicas"
 // +kubebuilder:printcolumn:name="Available",type=integer,JSONPath=".status.workerPool.readyReplicas",description="Ready worker replicas"

@@ -17,6 +17,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/utils/ptr"
+	gatewayv1 "sigs.k8s.io/gateway-api/apis/v1"
 	"sigs.k8s.io/yaml"
 
 	computev1 "github.com/polars-inc/polars-k8s-operator/api/v1alpha1"
@@ -146,34 +147,7 @@ var _ = Describe("Manager", Ordered, func() {
 	Context("Manager", func() {
 		It("should run successfully", func() {
 			By("validating that the controller-manager pod is running as expected")
-			verifyControllerUp := func(g Gomega) {
-				By("getting the name of the controller-manager pod")
-				cmd := exec.Command("kubectl", "get",
-					"pods", "-l", "control-plane=controller-manager",
-					"-o", "go-template={{ range .items }}"+
-						"{{ if not .metadata.deletionTimestamp }}"+
-						"{{ .metadata.name }}"+
-						"{{ \"\\n\" }}{{ end }}{{ end }}",
-					"-n", namespace,
-				)
-
-				podOutput, err := utils.Run(cmd)
-				g.Expect(err).NotTo(HaveOccurred(), "Failed to retrieve controller-manager pod information")
-				podNames := utils.GetNonEmptyLines(podOutput)
-				g.Expect(podNames).To(HaveLen(1), "expected 1 controller pod running")
-				controllerPodName = podNames[0]
-				g.Expect(controllerPodName).To(ContainSubstring("controller-manager"))
-
-				By("validating the pod's status")
-				cmd = exec.Command("kubectl", "get",
-					"pods", controllerPodName, "-o", "jsonpath={.status.phase}",
-					"-n", namespace,
-				)
-				output, err := utils.Run(cmd)
-				g.Expect(err).NotTo(HaveOccurred())
-				g.Expect(output).To(Equal("Running"), "Incorrect controller-manager pod status")
-			}
-			Eventually(verifyControllerUp).Should(Succeed())
+			Eventually(func(g Gomega) { controllerPodName = runningControllerPod(g) }).Should(Succeed())
 		})
 
 		It("should ensure the metrics endpoint is serving metrics", func() {
@@ -606,6 +580,110 @@ var _ = Describe("Manager", Ordered, func() {
 			Expect(err).NotTo(HaveOccurred())
 		})
 
+		Context("Gateway API routes", func() {
+			schedulerRoute := routeE2EClusterName + "-scheduler"
+			observatoryRoute := routeE2EClusterName + "-observatory"
+			routes := map[string]string{"grpcroute": schedulerRoute, "httproute": observatoryRoute}
+
+			AfterAll(func() {
+				By("deleting the routed PolarsCluster")
+				cmd := exec.Command("kubectl", "delete", "polarscluster", routeE2EClusterName,
+					"-n", clusterNamespace, "--ignore-not-found")
+				_, _ = utils.Run(cmd)
+
+				By("uninstalling the Gateway API CRDs")
+				cmd = exec.Command("kubectl", "delete", "--ignore-not-found", "-f", gatewayAPICRDDir())
+				_, _ = utils.Run(cmd)
+			})
+
+			It("should report GatewayAPIUnavailable while the Gateway API CRDs are not installed", func() {
+				Expect(kubectlApply(routedPolarsClusterManifest(clusterNamespace, routeE2EClusterName))).To(Succeed())
+
+				Eventually(func(g Gomega) {
+					g.Expect(conditionField(clusterNamespace, routeE2EClusterName, "RoutesReady", "reason")).
+						To(Equal("GatewayAPIUnavailable"))
+				}).Should(Succeed())
+			})
+
+			It("should create and own the routes once the Gateway API CRDs are installed and the operator restarts", func() {
+				By("installing the standard-channel Gateway API CRDs")
+				cmd := exec.Command("kubectl", "apply", "--server-side", "-f", gatewayAPICRDDir())
+				_, err := utils.Run(cmd)
+				Expect(err).NotTo(HaveOccurred())
+
+				By("restarting the controller-manager")
+				cmd = exec.Command("kubectl", "rollout", "restart",
+					"deployment/polars-k8s-operator-controller-manager", "-n", namespace)
+				_, err = utils.Run(cmd)
+				Expect(err).NotTo(HaveOccurred())
+				cmd = exec.Command("kubectl", "rollout", "status",
+					"deployment/polars-k8s-operator-controller-manager", "-n", namespace, "--timeout=2m")
+				_, err = utils.Run(cmd)
+				Expect(err).NotTo(HaveOccurred())
+				Eventually(func(g Gomega) { controllerPodName = runningControllerPod(g) }).Should(Succeed())
+
+				for kind, route := range routes {
+					By(fmt.Sprintf("verifying the %s %s is owned and backed by its Service", kind, route))
+					Eventually(func(g Gomega) {
+						cmd := exec.Command("kubectl", "get", kind, route, "-n", clusterNamespace, "-o",
+							"jsonpath={.metadata.ownerReferences[0].kind} {.spec.hostnames[0]} {.spec.rules[0].backendRefs[0].name}")
+						output, err := utils.Run(cmd)
+						g.Expect(err).NotTo(HaveOccurred())
+						g.Expect(output).To(Equal(fmt.Sprintf("PolarsCluster %s.example.com %s", route, route)))
+					}).Should(Succeed())
+				}
+
+				Eventually(func(g Gomega) {
+					g.Expect(conditionField(clusterNamespace, routeE2EClusterName, "RoutesReady", "reason")).
+						To(Equal("NotAccepted"))
+				}).Should(Succeed())
+			})
+
+			It("should accept the checked-in Gateway API routes sample manifest", func() {
+				cmd := exec.Command("kubectl", "apply", "--dry-run=server", "-n", clusterNamespace,
+					"-f", "config/samples/compute_v1alpha1_polarscluster_gateway_routes.yaml")
+				_, err := utils.Run(cmd)
+				Expect(err).NotTo(HaveOccurred(), "The checked-in Gateway API routes sample manifest should be accepted")
+			})
+
+			It("should mark the cluster Ready once its Gateway accepts both routes", func() {
+				for kind, route := range routes {
+					By(fmt.Sprintf("reporting the %s %s as accepted, as a Gateway controller would", kind, route))
+					Expect(acceptRoute(clusterNamespace, kind, route)).To(Succeed())
+				}
+
+				Eventually(func(g Gomega) {
+					g.Expect(conditionField(clusterNamespace, routeE2EClusterName, "RoutesReady", "status")).To(Equal("True"))
+					g.Expect(conditionField(clusterNamespace, routeE2EClusterName, "Ready", "status")).To(Equal("True"))
+				}).Should(Succeed())
+			})
+
+			It("should delete a route once it is unset, and garbage-collect the rest with the PolarsCluster", func() {
+				By("unsetting the scheduler's route")
+				cmd := exec.Command("kubectl", "patch", "polarscluster", routeE2EClusterName, "-n", clusterNamespace,
+					"--type=json", "-p", `[{"op":"remove","path":"/spec/scheduler/services/scheduler/route"}]`)
+				_, err := utils.Run(cmd)
+				Expect(err).NotTo(HaveOccurred())
+
+				Eventually(func(g Gomega) {
+					cmd := exec.Command("kubectl", "get", "grpcroute", schedulerRoute, "-n", clusterNamespace)
+					_, err := utils.Run(cmd)
+					g.Expect(err).To(HaveOccurred())
+				}).Should(Succeed())
+
+				By("deleting the PolarsCluster")
+				cmd = exec.Command("kubectl", "delete", "polarscluster", routeE2EClusterName, "-n", clusterNamespace)
+				_, err = utils.Run(cmd)
+				Expect(err).NotTo(HaveOccurred())
+
+				Eventually(func(g Gomega) {
+					cmd := exec.Command("kubectl", "get", "httproute", observatoryRoute, "-n", clusterNamespace)
+					_, err := utils.Run(cmd)
+					g.Expect(err).To(HaveOccurred())
+				}).Should(Succeed())
+			})
+		})
+
 		Context("Real polars-on-premises image", Label("real-image"), func() {
 			BeforeAll(func() {
 				By("loading the polars-on-premises dist image into Kind")
@@ -642,6 +720,35 @@ var _ = Describe("Manager", Ordered, func() {
 		})
 	})
 })
+
+func runningControllerPod(g Gomega) string {
+	By("getting the name of the controller-manager pod")
+	cmd := exec.Command("kubectl", "get",
+		"pods", "-l", "control-plane=controller-manager",
+		"-o", "go-template={{ range .items }}"+
+			"{{ if not .metadata.deletionTimestamp }}"+
+			"{{ .metadata.name }}"+
+			"{{ \"\\n\" }}{{ end }}{{ end }}",
+		"-n", namespace,
+	)
+
+	podOutput, err := utils.Run(cmd)
+	g.Expect(err).NotTo(HaveOccurred(), "Failed to retrieve controller-manager pod information")
+	podNames := utils.GetNonEmptyLines(podOutput)
+	g.Expect(podNames).To(HaveLen(1), "expected 1 controller pod running")
+	podName := podNames[0]
+	g.Expect(podName).To(ContainSubstring("controller-manager"))
+
+	By("validating the pod's status")
+	cmd = exec.Command("kubectl", "get",
+		"pods", podName, "-o", "jsonpath={.status.phase}",
+		"-n", namespace,
+	)
+	output, err := utils.Run(cmd)
+	g.Expect(err).NotTo(HaveOccurred())
+	g.Expect(output).To(Equal("Running"), "Incorrect controller-manager pod status")
+	return podName
+}
 
 type sharedSpecConfig struct {
 	namespace     string
@@ -915,6 +1022,7 @@ const composedDistRepository = "busybox"
 const composedDistTag = "latest"
 
 const serviceAccountE2EClusterName = "e2e-cluster-serviceaccount"
+const routeE2EClusterName = "e2e-cluster-routes"
 const existingWorkerServiceAccountName = "e2e-existing-worker-sa"
 
 func composedPolarsCluster(ns, name string, imageVolume bool) *computev1.PolarsCluster {
@@ -1027,6 +1135,27 @@ func serviceAccountPolarsClusterManifest(ns, name string) string {
 	return mustMarshalManifest(cluster)
 }
 
+func routedPolarsClusterManifest(ns, name string) string {
+	cluster := busyboxPolarsCluster(ns, name, 1)
+	route := func(hostname string) *computev1.ExposedServiceConfig {
+		return &computev1.ExposedServiceConfig{
+			Route: &computev1.RouteSpec{
+				ParentRefs: []gatewayv1.ParentReference{{
+					Name:        "compute",
+					Namespace:   ptr.To(gatewayv1.Namespace("gateway-system")),
+					SectionName: ptr.To(gatewayv1.SectionName("https")),
+				}},
+				Hostnames: []gatewayv1.Hostname{gatewayv1.Hostname(hostname)},
+			},
+		}
+	}
+	cluster.Spec.Scheduler.Services = &computev1.SchedulerServicesSpec{
+		Scheduler:   route(name + "-scheduler.example.com"),
+		Observatory: route(name + "-observatory.example.com"),
+	}
+	return mustMarshalManifest(cluster)
+}
+
 func realImagePolarsClusterManifest(ns, name string) string {
 	// The scheduler podTemplate only names the container (matching the one
 	// the operator composes, so they merge): it gives the shared
@@ -1072,6 +1201,50 @@ func realImageLicenseFile() string {
 	home, err := os.UserHomeDir()
 	Expect(err).NotTo(HaveOccurred(), "Failed to resolve the home directory for the default license path")
 	return filepath.Join(home, ".cache", "polars-cloud", "license", "license.json")
+}
+
+func gatewayAPICRDDir() string {
+	dir, err := utils.GatewayAPICRDDir()
+	Expect(err).NotTo(HaveOccurred())
+	return dir
+}
+
+func acceptRoute(ns, kind, name string) error {
+	cmd := exec.Command("kubectl", "get", kind, name, "-n", ns, "-o", "jsonpath={.spec.parentRefs[0]}")
+	output, err := utils.Run(cmd)
+	if err != nil {
+		return err
+	}
+	var parentRef gatewayv1.ParentReference
+	if err := json.Unmarshal([]byte(output), &parentRef); err != nil {
+		return err
+	}
+
+	now := metav1.Now()
+	patch, err := json.Marshal(map[string]gatewayv1.RouteStatus{
+		"status": {Parents: []gatewayv1.RouteParentStatus{{
+			ParentRef:      parentRef,
+			ControllerName: "example.com/gateway-controller",
+			Conditions: []metav1.Condition{
+				{Type: string(gatewayv1.RouteConditionAccepted), Status: metav1.ConditionTrue, Reason: "Accepted", LastTransitionTime: now},
+				{Type: string(gatewayv1.RouteConditionResolvedRefs), Status: metav1.ConditionTrue, Reason: "ResolvedRefs", LastTransitionTime: now},
+			},
+		}}},
+	})
+	if err != nil {
+		return err
+	}
+
+	cmd = exec.Command("kubectl", "patch", kind, name, "-n", ns,
+		"--subresource=status", "--type=merge", "-p", string(patch))
+	_, err = utils.Run(cmd)
+	return err
+}
+
+func conditionField(ns, clusterName, condType, field string) (string, error) {
+	cmd := exec.Command("kubectl", "get", "polarscluster", clusterName, "-n", ns,
+		"-o", fmt.Sprintf("jsonpath={.status.conditions[?(@.type=='%s')].%s}", condType, field))
+	return utils.Run(cmd)
 }
 
 func selectorForWorkerPool(ns, clusterName string) (string, error) {

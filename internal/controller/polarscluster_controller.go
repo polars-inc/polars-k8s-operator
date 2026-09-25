@@ -14,10 +14,12 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/tools/events"
 	"k8s.io/client-go/util/workqueue"
+	"k8s.io/utils/ptr"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
+	gatewayv1 "sigs.k8s.io/gateway-api/apis/v1"
 
 	computev1 "github.com/polars-inc/polars-k8s-operator/api/v1alpha1"
 )
@@ -40,6 +42,9 @@ const (
 	actionDeletePod = "DeletePod"
 
 	maxConcurrentPodCreations = 4
+
+	schedulerPort       = 5051
+	observatoryRESTPort = 3001
 )
 
 // PolarsClusterReconciler reconciles a PolarsCluster object
@@ -47,6 +52,8 @@ type PolarsClusterReconciler struct {
 	client.Client
 	Scheme   *runtime.Scheme
 	Recorder events.EventRecorder
+
+	GatewayAPIEnabled bool
 }
 
 // +kubebuilder:rbac:groups=compute.pola.rs,resources=polarsclusters,verbs=get;list;watch;create;update;patch;delete
@@ -55,6 +62,7 @@ type PolarsClusterReconciler struct {
 // +kubebuilder:rbac:groups="",resources=pods,verbs=get;list;watch;create;delete
 // +kubebuilder:rbac:groups="",resources=services,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups="",resources=serviceaccounts,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=gateway.networking.k8s.io,resources=grpcroutes;httproutes,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups="",resources=events,verbs=create;patch
 // +kubebuilder:rbac:groups=events.k8s.io,resources=events,verbs=create;patch
 
@@ -108,7 +116,7 @@ func (r *PolarsClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		return ctrl.Result{}, err
 	}
 	cluster.Status.Scheduler = schedulerStatus
-	setReadyCondition(cluster, conditionSchedulerReady, schedulerStatus.Ready, "Reconciled", "NotReady", schedulerMessage)
+	setReadyCondition(cluster, conditionSchedulerReady, schedulerStatus.Ready, "NotReady", schedulerMessage)
 
 	workerPoolStatus, workerMessage, err := r.reconcileWorkerPool(ctx, cluster)
 	if err != nil {
@@ -121,15 +129,30 @@ func (r *PolarsClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 	cluster.Status.WorkerPool = workerPoolStatus
 	workerPoolReady := workerPoolStatus.Replicas == cluster.Spec.WorkerPool.Replicas &&
 		workerPoolStatus.ReadyReplicas == workerPoolStatus.Replicas
-	setReadyCondition(cluster, conditionWorkerPoolReady, workerPoolReady, "Reconciled", "NotReady", workerMessage)
+	setReadyCondition(cluster, conditionWorkerPoolReady, workerPoolReady, "NotReady", workerMessage)
+
+	routes, err := r.reconcileRoutes(ctx, cluster)
+	if err != nil {
+		return ctrl.Result{}, err
+	}
+	if routes.requested {
+		setReadyCondition(cluster, conditionRoutesReady, routes.ready, routes.reason, routes.message)
+	} else {
+		meta.RemoveStatusCondition(&cluster.Status.Conditions, conditionRoutesReady)
+	}
 
 	// The scheduler blocking readiness is reported first: a down scheduler
 	// affects the whole cluster regardless of the worker pool's state.
-	readyMessage := schedulerMessage
-	if schedulerStatus.Ready {
+	var readyMessage string
+	switch {
+	case !schedulerStatus.Ready:
+		readyMessage = schedulerMessage
+	case !workerPoolReady:
 		readyMessage = workerMessage
+	case !routes.ready:
+		readyMessage = routes.message
 	}
-	setReadyCondition(cluster, conditionReady, schedulerStatus.Ready && workerPoolReady, "Reconciled", "NotReady", readyMessage)
+	setReadyCondition(cluster, conditionReady, schedulerStatus.Ready && workerPoolReady && routes.ready, "NotReady", readyMessage)
 
 	cluster.Status.ObservedGeneration = cluster.Generation
 
@@ -144,6 +167,9 @@ func (r *PolarsClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		r.Recorder.Eventf(cluster, nil, corev1.EventTypeWarning, "NotReady", actionReconcile, "%s", readyMessage)
 	}
 
+	if routes.conflict {
+		return ctrl.Result{RequeueAfter: routeConflictRetryInterval}, nil
+	}
 	return ctrl.Result{}, nil
 }
 
@@ -179,16 +205,16 @@ func (r *PolarsClusterReconciler) recordSpecError(ctx context.Context, cluster *
 }
 
 // setReadyCondition upserts a True/False condition of the given type on the
-// cluster, choosing the reason based on whether ready is true. notReadyMessage
-// is dropped when ready, so a condition never carries a stale explanation
-// from a prior NotReady state.
-func setReadyCondition(cluster *computev1.PolarsCluster, condType string, ready bool, readyReason, notReadyReason, notReadyMessage string) {
+// cluster, with reason "Reconciled" when ready. notReadyReason and
+// notReadyMessage are dropped when ready, so a condition never carries a
+// stale explanation from a prior NotReady state.
+func setReadyCondition(cluster *computev1.PolarsCluster, condType string, ready bool, notReadyReason, notReadyMessage string) {
 	status := v1.ConditionFalse
 	reason := notReadyReason
 	message := notReadyMessage
 	if ready {
 		status = v1.ConditionTrue
-		reason = readyReason
+		reason = "Reconciled"
 		message = ""
 	}
 	meta.SetStatusCondition(&cluster.Status.Conditions, v1.Condition{
@@ -379,10 +405,7 @@ func (r *PolarsClusterReconciler) reconcileWorkerPool(ctx context.Context, clust
 // reconcileServices creates or updates the scheduler, internal, and
 // observatory Services.
 func (r *PolarsClusterReconciler) reconcileServices(ctx context.Context, cluster *computev1.PolarsCluster) error {
-	var services computev1.SchedulerServicesSpec
-	if cluster.Spec.Scheduler != nil && cluster.Spec.Scheduler.Services != nil {
-		services = *cluster.Spec.Scheduler.Services
-	}
+	services := schedulerServices(cluster)
 
 	desired := []struct {
 		name   string
@@ -391,9 +414,9 @@ func (r *PolarsClusterReconciler) reconcileServices(ctx context.Context, cluster
 	}{
 		{
 			name:   schedulerServiceName(cluster),
-			config: services.Scheduler,
+			config: serviceConfig(services.Scheduler),
 			ports: []corev1.ServicePort{
-				{Name: "sched", Port: 5051, Protocol: corev1.ProtocolTCP},
+				{Name: "sched", Port: schedulerPort, Protocol: corev1.ProtocolTCP, AppProtocol: ptr.To("kubernetes.io/h2c")},
 			},
 		},
 		{
@@ -406,9 +429,9 @@ func (r *PolarsClusterReconciler) reconcileServices(ctx context.Context, cluster
 		},
 		{
 			name:   observatoryServiceName(cluster),
-			config: services.Observatory,
+			config: serviceConfig(services.Observatory),
 			ports: []corev1.ServicePort{
-				{Name: "obser-rest", Port: 3001, Protocol: corev1.ProtocolTCP},
+				{Name: "obser-rest", Port: observatoryRESTPort, Protocol: corev1.ProtocolTCP},
 			},
 		},
 	}
@@ -435,7 +458,7 @@ func (r *PolarsClusterReconciler) reconcileServices(ctx context.Context, cluster
 				ObjectMeta: v1.ObjectMeta{
 					Name:        svc.name,
 					Namespace:   cluster.Namespace,
-					Labels:      standardLabels(cluster, componentScheduler),
+					Labels:      schedulerObjectLabels(cluster),
 					Annotations: annotations,
 				},
 				Spec: corev1.ServiceSpec{
@@ -444,7 +467,6 @@ func (r *PolarsClusterReconciler) reconcileServices(ctx context.Context, cluster
 					Selector: selector,
 				},
 			}
-			service.Labels[clusterLabel] = cluster.Name
 
 			if err := controllerutil.SetControllerReference(cluster, &service, r.Scheme); err != nil {
 				return err
@@ -467,6 +489,26 @@ func (r *PolarsClusterReconciler) reconcileServices(ctx context.Context, cluster
 	}
 
 	return nil
+}
+
+func schedulerServices(cluster *computev1.PolarsCluster) computev1.SchedulerServicesSpec {
+	if cluster.Spec.Scheduler != nil && cluster.Spec.Scheduler.Services != nil {
+		return *cluster.Spec.Scheduler.Services
+	}
+	return computev1.SchedulerServicesSpec{}
+}
+
+func schedulerObjectLabels(cluster *computev1.PolarsCluster) map[string]string {
+	labels := standardLabels(cluster, componentScheduler)
+	labels[clusterLabel] = cluster.Name
+	return labels
+}
+
+func serviceConfig(config *computev1.ExposedServiceConfig) *computev1.ServiceConfig {
+	if config == nil {
+		return nil
+	}
+	return &config.ServiceConfig
 }
 
 func podIsReady(pod *corev1.Pod) bool {
@@ -512,11 +554,17 @@ func schedulerPodName(cluster *computev1.PolarsCluster) string {
 
 // SetupWithManager sets up the controller with the Manager.
 func (r *PolarsClusterReconciler) SetupWithManager(mgr ctrl.Manager) error {
-	return ctrl.NewControllerManagedBy(mgr).
+	builder := ctrl.NewControllerManagedBy(mgr).
 		For(&computev1.PolarsCluster{}).
 		Owns(&corev1.Pod{}).
 		Owns(&corev1.Service{}).
-		Owns(&corev1.ServiceAccount{}).
+		Owns(&corev1.ServiceAccount{})
+	if r.GatewayAPIEnabled {
+		builder = builder.
+			Owns(&gatewayv1.GRPCRoute{}).
+			Owns(&gatewayv1.HTTPRoute{})
+	}
+	return builder.
 		Named("polarscluster").
 		Complete(r)
 }
