@@ -16,6 +16,8 @@ import (
 // on PolarsClusterSpec.Version.
 const DefaultVersion = "0.7.1"
 
+const LatestVersion = "latest"
+
 // PolarsClusterSpec defines the desired state of PolarsCluster
 // +kubebuilder:validation:XValidation:rule="!has(self.license.onPremEnterprise) || (has(self.acceptEula) && self.acceptEula)",message="acceptEula must be true when using the On-Prem Enterprise license"
 type PolarsClusterSpec struct {
@@ -50,7 +52,7 @@ type PolarsClusterSpec struct {
 	// non-release image tags.
 	// +kubebuilder:default="0.7.1"
 	// +kubebuilder:validation:MaxLength=63
-	// +kubebuilder:validation:Pattern=`^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-((?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*)(?:\.(?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*))*))?(?:\+([0-9a-zA-Z-]+(?:\.[0-9a-zA-Z-]+)*))?$`
+	// +kubebuilder:validation:Pattern=`^(?:latest|(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-((?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*)(?:\.(?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*))*))?(?:\+([0-9a-zA-Z-]+(?:\.[0-9a-zA-Z-]+)*))?)$`
 	// +optional
 	Version string `json:"version,omitempty"`
 

@@ -87,7 +87,7 @@ var minCloudLicenseVersion = utilversion.MustParseSemantic("0.8.0")
 // returning nil when the version is unset. The schema validates the format
 // at admission; this also covers objects admitted under an older schema.
 func clusterVersion(cluster *computev1.PolarsCluster) (*utilversion.Version, error) {
-	if cluster.Spec.Version == "" {
+	if cluster.Spec.Version == "" || cluster.Spec.Version == computev1.LatestVersion {
 		return nil, nil
 	}
 	v, err := utilversion.ParseSemantic(cluster.Spec.Version)

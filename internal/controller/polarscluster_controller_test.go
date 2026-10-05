@@ -241,11 +241,11 @@ var _ = Describe("PolarsCluster validation", func() {
 		Expect(pods.Items).To(BeEmpty(), "no pods should be composed for an unsupported version")
 	})
 
-	It("should reject a non-semver version", func() {
+	It("should reject a non-semver version other than latest", func() {
 		cluster := &computev1.PolarsCluster{
 			ObjectMeta: metav1.ObjectMeta{Name: "validation-version", Namespace: validationNamespace},
 			Spec: computev1.PolarsClusterSpec{
-				Version: "latest",
+				Version: "nightly",
 				License: computev1.LicenseSpec{
 					OnPrem: &computev1.LicenseOnPremSpec{
 						ClientID: computev1.ValueOrSource{ValueFrom: &corev1.EnvVarSource{SecretKeyRef: &corev1.SecretKeySelector{
@@ -274,6 +274,10 @@ var _ = Describe("PolarsCluster validation", func() {
 		err := k8sClient.Create(context.Background(), cluster)
 		Expect(err).To(HaveOccurred())
 		Expect(err.Error()).To(ContainSubstring("spec.version"))
+
+		cluster.Spec.Version = computev1.LatestVersion
+		Expect(k8sClient.Create(context.Background(), cluster)).To(Succeed())
+		_ = k8sClient.Delete(context.Background(), cluster)
 	})
 })
 

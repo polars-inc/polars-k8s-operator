@@ -298,10 +298,15 @@ func TestClusterVersion(t *testing.T) {
 	g.Expect(err).NotTo(HaveOccurred())
 	g.Expect(v.String()).To(Equal(testDistTag))
 
-	cluster.Spec.Version = "latest"
+	cluster.Spec.Version = computev1.LatestVersion
+	v, err = clusterVersion(cluster)
+	g.Expect(err).NotTo(HaveOccurred())
+	g.Expect(v).To(BeNil(), "latest skips the minimum checks")
+
+	cluster.Spec.Version = "nightly"
 	_, err = clusterVersion(cluster)
 	g.Expect(err).To(HaveOccurred())
-	g.Expect(err.Error()).To(ContainSubstring(`"latest" is not a semantic version`))
+	g.Expect(err.Error()).To(ContainSubstring(`"nightly" is not a semantic version`))
 
 	cluster.Spec.Version = "0.7.0"
 	_, err = clusterVersion(cluster)
