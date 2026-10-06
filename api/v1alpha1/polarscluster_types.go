@@ -532,6 +532,12 @@ type ServiceConfig struct {
 	// to set up TLS termination or load balancers.
 	// +optional
 	Annotations map[string]string `json:"annotations,omitempty"`
+
+	// PublishNotReadyAddresses publishes the addresses of the Service's pods
+	// before they are Ready. Defaults to true. More info:
+	// https://kubernetes.io/docs/reference/kubernetes-api/service-resources/service-v1/#ServiceSpec
+	// +optional
+	PublishNotReadyAddresses *bool `json:"publishNotReadyAddresses,omitempty"`
 }
 
 // WorkerPoolDeclaration defines the desired state of a PolarsCluster's worker pool.
