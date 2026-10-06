@@ -10750,6 +10750,12 @@ spec:
                               Annotations to add to the Service object. Used by some controllers
                               to set up TLS termination or load balancers.
                             type: object
+                          publishNotReadyAddresses:
+                            description: |-
+                              PublishNotReadyAddresses publishes the addresses of the Service's pods
+                              before they are Ready. Defaults to true. More info:
+                              https://kubernetes.io/docs/reference/kubernetes-api/service-resources/service-v1/#ServiceSpec
+                            type: boolean
                           type:
                             default: ClusterIP
                             description: |-
@@ -10770,6 +10776,12 @@ spec:
                               Annotations to add to the Service object. Used by some controllers
                               to set up TLS termination or load balancers.
                             type: object
+                          publishNotReadyAddresses:
+                            description: |-
+                              PublishNotReadyAddresses publishes the addresses of the Service's pods
+                              before they are Ready. Defaults to true. More info:
+                              https://kubernetes.io/docs/reference/kubernetes-api/service-resources/service-v1/#ServiceSpec
+                            type: boolean
                           route:
                             description: |-
                               Route attaches the Service to Gateway API Gateways. The operator owns
@@ -10992,6 +11004,12 @@ spec:
                               Annotations to add to the Service object. Used by some controllers
                               to set up TLS termination or load balancers.
                             type: object
+                          publishNotReadyAddresses:
+                            description: |-
+                              PublishNotReadyAddresses publishes the addresses of the Service's pods
+                              before they are Ready. Defaults to true. More info:
+                              https://kubernetes.io/docs/reference/kubernetes-api/service-resources/service-v1/#ServiceSpec
+                            type: boolean
                           route:
                             description: |-
                               Route attaches the Service to Gateway API Gateways. The operator owns

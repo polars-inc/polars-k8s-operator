@@ -444,11 +444,13 @@ func (r *PolarsClusterReconciler) reconcileServices(ctx context.Context, cluster
 	for _, svc := range desired {
 		serviceType := corev1.ServiceTypeClusterIP
 		var annotations map[string]string
+		publishNotReadyAddresses := true
 		if svc.config != nil {
 			if svc.config.Type != nil && *svc.config.Type != "" {
 				serviceType = *svc.config.Type
 			}
 			annotations = svc.config.Annotations
+			publishNotReadyAddresses = ptr.Deref(svc.config.PublishNotReadyAddresses, true)
 		}
 
 		var existing corev1.Service
@@ -462,9 +464,10 @@ func (r *PolarsClusterReconciler) reconcileServices(ctx context.Context, cluster
 					Annotations: annotations,
 				},
 				Spec: corev1.ServiceSpec{
-					Type:     serviceType,
-					Ports:    svc.ports,
-					Selector: selector,
+					Type:                     serviceType,
+					Ports:                    svc.ports,
+					Selector:                 selector,
+					PublishNotReadyAddresses: publishNotReadyAddresses,
 				},
 			}
 
@@ -483,6 +486,7 @@ func (r *PolarsClusterReconciler) reconcileServices(ctx context.Context, cluster
 		existing.Spec.Type = serviceType
 		existing.Spec.Ports = svc.ports
 		existing.Spec.Selector = selector
+		existing.Spec.PublishNotReadyAddresses = publishNotReadyAddresses
 		if err := r.Update(ctx, &existing); err != nil {
 			return classifyAPIError("ServiceRejected", err)
 		}
