@@ -91,14 +91,6 @@ func (r *PolarsClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		return r.recordSpecError(ctx, cluster, conditionReady, specErrorf("InvalidVersion", "%s", err.Error()))
 	}
 
-	if err := r.reconcileServices(ctx, cluster); err != nil {
-		var se *specError
-		if errors.As(err, &se) {
-			return r.recordSpecError(ctx, cluster, conditionReady, se)
-		}
-		return ctrl.Result{}, err
-	}
-
 	if err := r.reconcilePolarsClusterServiceAccounts(ctx, cluster); err != nil {
 		var se *specError
 		if errors.As(err, &se) {
@@ -117,6 +109,14 @@ func (r *PolarsClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 	}
 	cluster.Status.Scheduler = schedulerStatus
 	setReadyCondition(cluster, conditionSchedulerReady, schedulerStatus.Ready, "NotReady", schedulerMessage)
+
+	if err := r.reconcileServices(ctx, cluster); err != nil {
+		var se *specError
+		if errors.As(err, &se) {
+			return r.recordSpecError(ctx, cluster, conditionReady, se)
+		}
+		return ctrl.Result{}, err
+	}
 
 	workerPoolStatus, workerMessage, err := r.reconcileWorkerPool(ctx, cluster)
 	if err != nil {
@@ -441,57 +441,67 @@ func (r *PolarsClusterReconciler) reconcileServices(ctx context.Context, cluster
 		componentLabel: componentScheduler,
 	}
 
-	for _, svc := range desired {
-		serviceType := corev1.ServiceTypeClusterIP
-		var annotations map[string]string
-		publishNotReadyAddresses := true
-		if svc.config != nil {
-			if svc.config.Type != nil && *svc.config.Type != "" {
-				serviceType = *svc.config.Type
-			}
-			annotations = svc.config.Annotations
-			publishNotReadyAddresses = ptr.Deref(svc.config.PublishNotReadyAddresses, true)
-		}
+	errs := make([]error, len(desired))
+	workqueue.ParallelizeUntil(ctx, len(desired), len(desired), func(i int) {
+		svc := desired[i]
+		errs[i] = r.reconcileService(ctx, cluster, svc.name, svc.config, svc.ports, selector)
+	})
+	setAside, err := reducePodErrors(errs)
+	for _, se := range setAside {
+		logf.FromContext(ctx).Error(se, "Could not reconcile Service", "cluster", cluster.Name)
+	}
+	return err
+}
 
-		var existing corev1.Service
-		err := r.Get(ctx, client.ObjectKey{Namespace: cluster.Namespace, Name: svc.name}, &existing)
-		if apierrors.IsNotFound(err) {
-			service := corev1.Service{
-				ObjectMeta: v1.ObjectMeta{
-					Name:        svc.name,
-					Namespace:   cluster.Namespace,
-					Labels:      schedulerObjectLabels(cluster),
-					Annotations: annotations,
-				},
-				Spec: corev1.ServiceSpec{
-					Type:                     serviceType,
-					Ports:                    svc.ports,
-					Selector:                 selector,
-					PublishNotReadyAddresses: publishNotReadyAddresses,
-				},
-			}
-
-			if err := controllerutil.SetControllerReference(cluster, &service, r.Scheme); err != nil {
-				return err
-			}
-			if err := r.Create(ctx, &service); err != nil {
-				return classifyAPIError("ServiceRejected", err)
-			}
-			continue
-		} else if err != nil {
-			return err
+func (r *PolarsClusterReconciler) reconcileService(ctx context.Context, cluster *computev1.PolarsCluster, name string, config *computev1.ServiceConfig, ports []corev1.ServicePort, selector map[string]string) error {
+	serviceType := corev1.ServiceTypeClusterIP
+	var annotations map[string]string
+	publishNotReadyAddresses := true
+	if config != nil {
+		if config.Type != nil && *config.Type != "" {
+			serviceType = *config.Type
 		}
-
-		existing.Annotations = annotations
-		existing.Spec.Type = serviceType
-		existing.Spec.Ports = svc.ports
-		existing.Spec.Selector = selector
-		existing.Spec.PublishNotReadyAddresses = publishNotReadyAddresses
-		if err := r.Update(ctx, &existing); err != nil {
-			return classifyAPIError("ServiceRejected", err)
-		}
+		annotations = config.Annotations
+		publishNotReadyAddresses = ptr.Deref(config.PublishNotReadyAddresses, true)
 	}
 
+	var existing corev1.Service
+	err := r.Get(ctx, client.ObjectKey{Namespace: cluster.Namespace, Name: name}, &existing)
+	if apierrors.IsNotFound(err) {
+		service := corev1.Service{
+			ObjectMeta: v1.ObjectMeta{
+				Name:        name,
+				Namespace:   cluster.Namespace,
+				Labels:      schedulerObjectLabels(cluster),
+				Annotations: annotations,
+			},
+			Spec: corev1.ServiceSpec{
+				Type:                     serviceType,
+				Ports:                    ports,
+				Selector:                 selector,
+				PublishNotReadyAddresses: publishNotReadyAddresses,
+			},
+		}
+
+		if err := controllerutil.SetControllerReference(cluster, &service, r.Scheme); err != nil {
+			return err
+		}
+		if err := r.Create(ctx, &service); err != nil {
+			return classifyAPIError("ServiceRejected", err)
+		}
+		return nil
+	} else if err != nil {
+		return err
+	}
+
+	existing.Annotations = annotations
+	existing.Spec.Type = serviceType
+	existing.Spec.Ports = ports
+	existing.Spec.Selector = selector
+	existing.Spec.PublishNotReadyAddresses = publishNotReadyAddresses
+	if err := r.Update(ctx, &existing); err != nil {
+		return classifyAPIError("ServiceRejected", err)
+	}
 	return nil
 }
 
