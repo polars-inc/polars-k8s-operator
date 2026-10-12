@@ -131,7 +131,11 @@ var _ = Describe("PolarsCluster Controller", func() {
 				Expect(service.OwnerReferences).To(HaveLen(1))
 				Expect(service.OwnerReferences[0].Kind).To(Equal("PolarsCluster"))
 				Expect(service.Spec.Selector).To(HaveKeyWithValue(componentLabel, componentScheduler))
-				Expect(service.Spec.ClusterIP == corev1.ClusterIPNone).To(Equal(name == resourceName+"-scheduler-internal"))
+				if name == resourceName+"-scheduler-internal" {
+					Expect(service.Spec.ClusterIP).To(Equal(corev1.ClusterIPNone))
+				} else {
+					Expect(service.Spec.ClusterIP).NotTo(Equal(corev1.ClusterIPNone))
+				}
 			}
 
 			By("verifying the scheduler pod is created with a template hash")
