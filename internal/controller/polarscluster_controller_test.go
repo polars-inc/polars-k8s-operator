@@ -79,6 +79,9 @@ var _ = Describe("PolarsCluster Controller", func() {
 									},
 								},
 							},
+							Services: &computev1.SchedulerServicesSpec{
+								Internal: &computev1.ServiceConfig{ClusterIP: corev1.ClusterIPNone},
+							},
 						},
 						WorkerPool: computev1.WorkerPoolDeclaration{
 							PodTemplate: &corev1.PodTemplateSpec{
@@ -128,6 +131,7 @@ var _ = Describe("PolarsCluster Controller", func() {
 				Expect(service.OwnerReferences).To(HaveLen(1))
 				Expect(service.OwnerReferences[0].Kind).To(Equal("PolarsCluster"))
 				Expect(service.Spec.Selector).To(HaveKeyWithValue(componentLabel, componentScheduler))
+				Expect(service.Spec.ClusterIP == corev1.ClusterIPNone).To(Equal(name == resourceName+"-scheduler-internal"))
 			}
 
 			By("verifying the scheduler pod is created with a template hash")

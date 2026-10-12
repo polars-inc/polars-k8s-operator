@@ -538,6 +538,13 @@ type ServiceConfig struct {
 	// https://kubernetes.io/docs/reference/kubernetes-api/service-resources/service-v1/#ServiceSpec
 	// +optional
 	PublishNotReadyAddresses *bool `json:"publishNotReadyAddresses,omitempty"`
+
+	// ClusterIP of the Service; "None" makes it headless, so clients dial the
+	// pods directly. Applied on creation only, as the field is immutable.
+	// More info:
+	// https://kubernetes.io/docs/concepts/services-networking/service/#headless-services
+	// +optional
+	ClusterIP string `json:"clusterIP,omitempty"`
 }
 
 // WorkerPoolDeclaration defines the desired state of a PolarsCluster's worker pool.
