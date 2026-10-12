@@ -233,6 +233,7 @@ _Appears in:_
 | `type` _[ServiceType](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.36/#servicetype-v1-core)_ | Type determines how the Service is exposed: ClusterIP, NodePort, or<br />LoadBalancer. More info:<br />https://kubernetes.io/docs/concepts/services-networking/service/#publishing-services-service-types | ClusterIP | Optional: \{\} <br /> |
 | `annotations` _object (keys:string, values:string)_ | Annotations to add to the Service object. Used by some controllers<br />to set up TLS termination or load balancers. |  | Optional: \{\} <br /> |
 | `publishNotReadyAddresses` _boolean_ | PublishNotReadyAddresses publishes the addresses of the Service's pods<br />before they are Ready. Defaults to true. More info:<br />https://kubernetes.io/docs/reference/kubernetes-api/service-resources/service-v1/#ServiceSpec |  | Optional: \{\} <br /> |
+| `clusterIP` _string_ | ClusterIP of the Service; "None" makes it headless, so clients dial the<br />pods directly. Applied on creation only, as the field is immutable.<br />More info:<br />https://kubernetes.io/docs/concepts/services-networking/service/#headless-services |  | Optional: \{\} <br /> |
 | `route` _[RouteSpec](#routespec)_ | Route attaches the Service to Gateway API Gateways. The operator owns<br />the route, names it after the Service, and makes the Service its only<br />backend. Requires the Gateway API v1.1+ CRDs to be installed before<br />the operator starts. |  | Optional: \{\} <br /> |
 
 
@@ -742,6 +743,7 @@ _Appears in:_
 | `type` _[ServiceType](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.36/#servicetype-v1-core)_ | Type determines how the Service is exposed: ClusterIP, NodePort, or<br />LoadBalancer. More info:<br />https://kubernetes.io/docs/concepts/services-networking/service/#publishing-services-service-types | ClusterIP | Optional: \{\} <br /> |
 | `annotations` _object (keys:string, values:string)_ | Annotations to add to the Service object. Used by some controllers<br />to set up TLS termination or load balancers. |  | Optional: \{\} <br /> |
 | `publishNotReadyAddresses` _boolean_ | PublishNotReadyAddresses publishes the addresses of the Service's pods<br />before they are Ready. Defaults to true. More info:<br />https://kubernetes.io/docs/reference/kubernetes-api/service-resources/service-v1/#ServiceSpec |  | Optional: \{\} <br /> |
+| `clusterIP` _string_ | ClusterIP of the Service; "None" makes it headless, so clients dial the<br />pods directly. Applied on creation only, as the field is immutable.<br />More info:<br />https://kubernetes.io/docs/concepts/services-networking/service/#headless-services |  | Optional: \{\} <br /> |
 
 
 #### SharedFilesystemSpec
