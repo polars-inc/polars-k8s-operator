@@ -418,10 +418,9 @@ var _ = Describe("PolarsCluster spec-error handling", func() {
 
 		Eventually(recorder.Events).Should(Receive(ContainSubstring("ServiceRejected")))
 
-		By("verifying no scheduler pod was composed since Services never finished reconciling")
+		By("verifying the scheduler pod was composed since it reconciles before Services")
 		var schedulerPod corev1.Pod
-		err = k8sClient.Get(ctx, types.NamespacedName{Name: longName + "-scheduler", Namespace: validationNamespace}, &schedulerPod)
-		Expect(apierrors.IsNotFound(err)).To(BeTrue())
+		Expect(k8sClient.Get(ctx, types.NamespacedName{Name: longName + "-scheduler", Namespace: validationNamespace}, &schedulerPod)).To(Succeed())
 	})
 
 	It("should emit a Normal event on the not-Ready to Ready transition, and a Warning event with a diagnostic message on the reverse", func() {
