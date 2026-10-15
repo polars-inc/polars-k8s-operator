@@ -112,6 +112,14 @@ type PolarsClusterSpec struct {
 	// +optional
 	HostMetrics *HostMetricsSpec `json:"hostMetrics,omitempty"`
 
+	// ClusterDomain is the Kubernetes cluster DNS domain, e.g. "cluster.local".
+	// When set, workers address the scheduler by its fully qualified name
+	// instead of the bare Service name.
+	// +kubebuilder:validation:MaxLength=253
+	// +kubebuilder:validation:Pattern=`^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$`
+	// +optional
+	ClusterDomain string `json:"clusterDomain,omitempty"`
+
 	// Scheduler configures the cluster's scheduler pod and Services; all of
 	// it is optional when a runtime composes the scheduler container.
 	// +optional
