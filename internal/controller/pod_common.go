@@ -137,7 +137,7 @@ func composedRuntimeConfig(cluster *computev1.PolarsCluster) (initContainers []c
 	composed := cluster.Spec.Runtime.Composed
 
 	distRepository := defaultDistRepository
-	distPullPolicy := corev1.PullIfNotPresent
+	var distPullPolicy corev1.PullPolicy
 	if dist := composed.Dist; dist != nil {
 		if dist.Repository != "" {
 			distRepository = dist.Repository
