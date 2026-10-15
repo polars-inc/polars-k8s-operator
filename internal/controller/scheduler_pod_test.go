@@ -267,6 +267,8 @@ func TestBuildSchedulerPodTemplate_ComposedRuntime(t *testing.T) {
 	g.Expect(ok).To(BeTrue())
 	g.Expect(requirements.Value).To(Equal("/requirements/requirements.txt"))
 
+	g.Expect(scheduler.Env).To(ContainElement(corev1.EnvVar{Name: "UV_LINK_MODE", Value: "hardlink"}))
+
 	for _, name := range []string{"tmp-data", "release-data"} {
 		_, ok := findVolume(result.Spec.Volumes, name)
 		g.Expect(ok).To(BeTrue(), "expected volume %s", name)

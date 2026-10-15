@@ -131,6 +131,11 @@ func computedSchedulerPodSpec(cluster *computev1.PolarsCluster, containerName st
 
 	initContainers, runtimeContainer, runtimeEnv, runtimeVolumes, runtimeMounts := composedRuntimeConfig(cluster)
 	env := append(b.Vars(), runtimeEnv...)
+	if cluster.Spec.Runtime != nil {
+		// setup.sh installs into /tmp/.venv with uv's temp cache on the same
+		// emptyDir, so hardlinks replace the per-file copies.
+		env = append(env, corev1.EnvVar{Name: "UV_LINK_MODE", Value: "hardlink"})
+	}
 	volumes = append(volumes, runtimeVolumes...)
 	volumeMounts = append(volumeMounts, runtimeMounts...)
 
