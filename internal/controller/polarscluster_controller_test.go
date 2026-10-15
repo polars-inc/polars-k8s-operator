@@ -73,6 +73,9 @@ var _ = Describe("PolarsCluster Controller", func() {
 						},
 						Scheduler: &computev1.SchedulerSpec{
 							PodTemplate: &corev1.PodTemplateSpec{
+								ObjectMeta: metav1.ObjectMeta{
+									Annotations: map[string]string{"karpenter.sh/do-not-disrupt": "true"},
+								},
 								Spec: corev1.PodSpec{
 									Containers: []corev1.Container{
 										{Name: "scheduler", Image: testStandInImage},
@@ -144,6 +147,7 @@ var _ = Describe("PolarsCluster Controller", func() {
 				Name: resourceName + "-scheduler", Namespace: resourceNamespace,
 			}, &schedulerPod)).To(Succeed())
 			Expect(schedulerPod.Labels).To(HaveKey(templateHashLabel))
+			Expect(schedulerPod.Annotations).To(HaveKeyWithValue("karpenter.sh/do-not-disrupt", "true"))
 
 			By("verifying the status reflects the reconciled generation")
 			Expect(k8sClient.Get(ctx, typeNamespacedName, polarscluster)).To(Succeed())
