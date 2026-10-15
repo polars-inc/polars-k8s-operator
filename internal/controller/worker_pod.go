@@ -61,12 +61,11 @@ func BuildWorkerPodTemplate(cluster *computev1.PolarsCluster) (corev1.Pod, error
 func computedWorkerPodSpec(cluster *computev1.PolarsCluster, containerName string, baseContainer corev1.Container, injectProbe bool) corev1.PodSpec {
 	spec := cluster.Spec
 	wp := spec.WorkerPool
-	// Bare Service name, not an FQDN: workers always share the Service's
-	// namespace, so the pod's first DNS search domain resolves it in a
-	// single query. A "<svc>.<ns>.svc.<domain>" name has fewer dots than
-	// resolv.conf's ndots:5 and walks the whole search list (3 NXDOMAINs per
-	// lookup) before resolving — and needs the cluster domain configured.
 	internalHostname := schedulerInternalServiceName(cluster)
+	if spec.ClusterDomain != "" {
+		// The trailing dot makes the name absolute, so lookups skip the DNS search list.
+		internalHostname = fmt.Sprintf("%s.%s.svc.%s.", internalHostname, cluster.Namespace, spec.ClusterDomain)
+	}
 
 	b := newEnvBuilder()
 	b.String("RUST_BACKTRACE", "full")

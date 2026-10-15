@@ -322,22 +322,33 @@ func TestBuildWorkerPodTemplate_NoContainers(t *testing.T) {
 }
 
 func TestBuildWorkerPodTemplate_DiscoveryHostnames(t *testing.T) {
-	g := NewWithT(t)
+	cases := []struct {
+		name, clusterDomain, want string
+	}{
+		{"bare", "", "analytics-scheduler-internal"},
+		{"absolute", "cluster.local", "analytics-scheduler-internal." + testClusterNamespace + ".svc.cluster.local."},
+	}
 
-	result, err := BuildWorkerPodTemplate(polarsCluster(corev1.Container{}))
-	g.Expect(err).NotTo(HaveOccurred())
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
+			cluster := polarsCluster(corev1.Container{})
+			cluster.Spec.ClusterDomain = tc.clusterDomain
 
-	env := result.Spec.Containers[0].Env
+			result, err := BuildWorkerPodTemplate(cluster)
+			g.Expect(err).NotTo(HaveOccurred())
 
-	// Bare Service name: same-namespace resolution via the pod's first DNS
-	// search domain, no cluster-domain dependency.
-	scheduler, ok := findEnv(env, "PC_CUBLET__static_leader__scheduler_service__public_addr__hostname")
-	g.Expect(ok).To(BeTrue())
-	g.Expect(scheduler.Value).To(Equal("analytics-scheduler-internal"))
-
-	observatory, ok := findEnv(env, "PC_CUBLET__static_leader__observatory_service__public_addr__hostname")
-	g.Expect(ok).To(BeTrue())
-	g.Expect(observatory.Value).To(Equal(scheduler.Value))
+			env := result.Spec.Containers[0].Env
+			for _, key := range []string{
+				"PC_CUBLET__static_leader__scheduler_service__public_addr__hostname",
+				"PC_CUBLET__static_leader__observatory_service__public_addr__hostname",
+			} {
+				got, ok := findEnv(env, key)
+				g.Expect(ok).To(BeTrue())
+				g.Expect(got.Value).To(Equal(tc.want))
+			}
+		})
+	}
 }
 
 func TestBuildWorkerPodTemplate_CpuReserved(t *testing.T) {

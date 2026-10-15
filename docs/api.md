@@ -567,6 +567,7 @@ _Appears in:_
 | `lineage` _[LineageSpec](#lineagespec)_ | Lineage enables exporting query lineage events to an external<br />endpoint. |  | Optional: \{\} <br /> |
 | `observatory` _[ObservatorySpec](#observatoryspec)_ | Observatory configures the observatory dashboard's metrics storage. |  | Optional: \{\} <br /> |
 | `hostMetrics` _[HostMetricsSpec](#hostmetricsspec)_ | HostMetrics controls host metrics collection on both the scheduler and<br />worker pods. Defaults to enabled when unset. |  | Optional: \{\} <br /> |
+| `clusterDomain` _string_ | ClusterDomain is the Kubernetes cluster DNS domain, e.g. "cluster.local".<br />When set, workers address the scheduler by its fully qualified name<br />instead of the bare Service name. |  | MaxLength: 253 <br />Pattern: `^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$` <br />Optional: \{\} <br /> |
 | `scheduler` _[SchedulerSpec](#schedulerspec)_ | Scheduler configures the cluster's scheduler pod and Services; all of<br />it is optional when a runtime composes the scheduler container. |  | Optional: \{\} <br /> |
 | `workerPool` _[WorkerPoolDeclaration](#workerpooldeclaration)_ | WorkerPool declares the cluster's pool of worker pods. |  |  |
 
