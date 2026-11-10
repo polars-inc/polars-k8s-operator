@@ -20,6 +20,6 @@ resources:
   domain: pola.rs
   group: compute
   kind: PolarsCluster
-  path: github.com/polars-inc/polars-k8s-operator/api/v1alpha1
-  version: v1alpha1
+  path: github.com/polars-inc/polars-k8s-operator/api/v1
+  version: v1
 version: "3"

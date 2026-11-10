@@ -49,7 +49,7 @@ kubectl apply -f config/samples/<file>.yaml
 ## API Reference
 
 Generated reference documentation for the `PolarsCluster` custom resource lives in
-[docs/api.md](docs/api.md). It is generated from the Go types in `api/v1alpha1`.
+[docs/api.md](docs/api.md). It is generated from the Go types in `api/v1`.
 After changing them, run `make api-docs` and commit the result (CI fails on stale docs).
 
 ## Development

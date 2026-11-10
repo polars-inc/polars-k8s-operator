@@ -9,7 +9,7 @@ import (
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	ctrl "sigs.k8s.io/controller-runtime"
 
-	computev1 "github.com/polars-inc/polars-k8s-operator/api/v1alpha1"
+	computev1 "github.com/polars-inc/polars-k8s-operator/api/v1"
 )
 
 // defaultServiceAccountName is the namespace's default ServiceAccount, used

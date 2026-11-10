@@ -2,8 +2,8 @@
 # cluster (ClusterIP). Switch to LoadBalancer (recommended, with TLS
 # termination via the annotations your ingress/LB controller expects) or
 # NodePort to reach them from outside the cluster, or attach them to a
-# Gateway API Gateway (see compute_v1alpha1_polarscluster_gateway_routes.yaml).
-apiVersion: compute.pola.rs/v1alpha1
+# Gateway API Gateway (see compute_v1_polarscluster_gateway_routes.yaml).
+apiVersion: compute.pola.rs/v1
 kind: PolarsCluster
 metadata:
   name: polars-expose-scheduler

@@ -20,7 +20,7 @@ import (
 	gatewayv1 "sigs.k8s.io/gateway-api/apis/v1"
 	"sigs.k8s.io/yaml"
 
-	computev1 "github.com/polars-inc/polars-k8s-operator/api/v1alpha1"
+	computev1 "github.com/polars-inc/polars-k8s-operator/api/v1"
 	"github.com/polars-inc/polars-k8s-operator/test/utils"
 )
 
@@ -460,15 +460,15 @@ var _ = Describe("Manager", Ordered, func() {
 		// This keeps the checked-in sample manifest honest: the raw YAML a
 		// user would apply must stay valid against the CRD schema.
 		It("should accept the checked-in sample manifest", func() {
-			By("applying config/samples/compute_v1alpha1_polarscluster.yaml")
+			By("applying config/samples/compute_v1_polarscluster.yaml")
 			cmd := exec.Command("kubectl", "apply", "-n", clusterNamespace,
-				"-f", "config/samples/compute_v1alpha1_polarscluster.yaml")
+				"-f", "config/samples/compute_v1_polarscluster.yaml")
 			_, err := utils.Run(cmd)
 			Expect(err).NotTo(HaveOccurred(), "The checked-in sample manifest should be accepted")
 
 			By("deleting the sample PolarsCluster")
 			cmd = exec.Command("kubectl", "delete", "-n", clusterNamespace,
-				"-f", "config/samples/compute_v1alpha1_polarscluster.yaml")
+				"-f", "config/samples/compute_v1_polarscluster.yaml")
 			_, err = utils.Run(cmd)
 			Expect(err).NotTo(HaveOccurred())
 		})
@@ -641,7 +641,7 @@ var _ = Describe("Manager", Ordered, func() {
 
 			It("should accept the checked-in Gateway API routes sample manifest", func() {
 				cmd := exec.Command("kubectl", "apply", "--dry-run=server", "-n", clusterNamespace,
-					"-f", "config/samples/compute_v1alpha1_polarscluster_gateway_routes.yaml")
+					"-f", "config/samples/compute_v1_polarscluster_gateway_routes.yaml")
 				_, err := utils.Run(cmd)
 				Expect(err).NotTo(HaveOccurred(), "The checked-in Gateway API routes sample manifest should be accepted")
 			})

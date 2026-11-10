@@ -21,7 +21,7 @@ import (
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	gatewayv1 "sigs.k8s.io/gateway-api/apis/v1"
 
-	computev1 "github.com/polars-inc/polars-k8s-operator/api/v1alpha1"
+	computev1 "github.com/polars-inc/polars-k8s-operator/api/v1"
 )
 
 const (

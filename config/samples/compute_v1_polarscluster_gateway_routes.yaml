@@ -5,7 +5,7 @@
 #
 # Requires the Gateway API v1.1+ CRDs to be installed before the operator
 # starts, and a Gateway whose listener allows routes from this namespace.
-apiVersion: compute.pola.rs/v1alpha1
+apiVersion: compute.pola.rs/v1
 kind: PolarsCluster
 metadata:
   name: polars-gateway-routes
