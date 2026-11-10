@@ -2109,7 +2109,7 @@ spec:
                       dist:
                         description: |-
                           Dist is the Polars distribution image. Repository defaults to
-                          "polarscloud/polars-on-premises" and tag defaults to spec.version.
+                          "polarsinc/polars-nanook-compute" and tag defaults to spec.version.
                         properties:
                           pullPolicy:
                             description: |-

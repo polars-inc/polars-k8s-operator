@@ -14,7 +14,7 @@ import (
 const (
 	appName = "polars"
 
-	defaultDistRepository    = "polarscloud/polars-on-premises"
+	defaultDistRepository    = "polarsinc/polars-nanook-compute"
 	defaultRuntimeRepository = "python"
 	defaultRuntimeTag        = "3.13.9-slim-bookworm"
 	defaultPolarsExtras      = "cloudpickle"
