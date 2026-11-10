@@ -10760,6 +10760,9 @@ spec:
                     description: |-
                       ServiceAccount configures the ServiceAccount the scheduler pod runs
                       as. Defaults to the namespace's default ServiceAccount when unset.
+                      With autoscaling it instead defaults to "<cluster>-scheduler", created
+                      by the operator, and the operator binds the scheduler's ServiceAccount
+                      to a Role that lets it read and update this PolarsCluster.
                     properties:
                       create:
                         description: |-
@@ -11469,6 +11472,23 @@ spec:
                     description: HeartBeatInterval between workers and the scheduler.
                       Defaults to 5s.
                     type: string
+                  maxReplicas:
+                    description: |-
+                      MaxReplicas is the most workers autoscaling scales up to. Unbounded
+                      when unset.
+                    format: int32
+                    minimum: 0
+                    type: integer
+                  minReplicas:
+                    description: |-
+                      MinReplicas enables autoscaling: the scheduler resizes the pool
+                      between minReplicas and maxReplicas to match the worker demand of
+                      running queries. Requires workersPerQuery.default and Polars
+                      on-premises 0.8.4 or later. The scheduler updates this PolarsCluster
+                      through its ServiceAccount token, which must stay mounted.
+                    format: int32
+                    minimum: 0
+                    type: integer
                   podTemplate:
                     description: |-
                       PodTemplate customizes the worker pods; it is merged into the pod
@@ -20038,7 +20058,11 @@ spec:
                         type: object
                     type: object
                   replicas:
-                    description: Replicas is the desired number of worker pods.
+                    default: 0
+                    description: |-
+                      Replicas is the desired number of worker pods. With autoscaling the
+                      scheduler updates it, so leave it out of manifests that get re-applied
+                      (e.g. by GitOps), which would otherwise reset the scheduler's choice.
                     format: int32
                     minimum: 0
                     type: integer
@@ -20662,8 +20686,41 @@ spec:
                         - size
                         type: object
                     type: object
-                required:
-                - replicas
+                  workersToKeep:
+                    description: |-
+                      WorkersToKeep names worker pods to spare when scaling down, unless
+                      replicas drops below their count. The autoscaler sets it to the
+                      workers running queries.
+                    items:
+                      type: string
+                    type: array
+                    x-kubernetes-list-type: atomic
+                type: object
+                x-kubernetes-validations:
+                - message: maxReplicas requires minReplicas
+                  rule: '!has(self.maxReplicas) || has(self.minReplicas)'
+                - message: minReplicas must not exceed maxReplicas
+                  rule: '!has(self.minReplicas) || !has(self.maxReplicas) || self.minReplicas
+                    <= self.maxReplicas'
+              workersPerQuery:
+                description: WorkersPerQuery sets how many workers each query uses.
+                properties:
+                  default:
+                    description: |-
+                      Default is the number of workers a query uses when it doesn't request
+                      a count itself, and the capacity it requests from the autoscaler.
+                      Required with autoscaling; otherwise defaults to workerPool.replicas.
+                    format: int32
+                    minimum: 1
+                    type: integer
+                  max:
+                    description: |-
+                      Max caps the number of workers a single query may use; a query asking
+                      for more gets this many. Unbounded when unset, though autoscaling never
+                      exceeds workerPool.maxReplicas.
+                    format: int32
+                    minimum: 1
+                    type: integer
                 type: object
             required:
             - license
@@ -20673,6 +20730,10 @@ spec:
             - message: acceptEula must be true when using the On-Prem Enterprise license
               rule: '!has(self.license.onPremEnterprise) || (has(self.acceptEula)
                 && self.acceptEula)'
+            - message: workersPerQuery.default is required when workerPool.minReplicas
+                enables autoscaling
+              rule: '!has(self.workerPool.minReplicas) || (has(self.workersPerQuery)
+                && has(self.workersPerQuery.default))'
           status:
             description: status defines the observed state of PolarsCluster
             properties:

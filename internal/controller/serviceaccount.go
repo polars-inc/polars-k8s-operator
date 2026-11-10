@@ -17,10 +17,15 @@ import (
 const defaultServiceAccountName = "default"
 
 // schedulerServiceAccountSpec returns the scheduler's ServiceAccountSpec, or
-// nil when scheduler or serviceAccount is unset.
+// nil when scheduler or serviceAccount is unset. An autoscaling scheduler
+// gets its own ServiceAccount by default, so the workers, which run as the
+// namespace's default one, don't share its access to the PolarsCluster.
 func schedulerServiceAccountSpec(cluster *computev1.PolarsCluster) *computev1.ServiceAccountSpec {
-	if s := cluster.Spec.Scheduler; s != nil {
+	if s := cluster.Spec.Scheduler; s != nil && s.ServiceAccount != nil {
 		return s.ServiceAccount
+	}
+	if autoscalingEnabled(cluster) {
+		return &computev1.ServiceAccountSpec{Create: true}
 	}
 	return nil
 }
@@ -41,6 +46,12 @@ func schedulerServiceAccountName(cluster *computev1.PolarsCluster) string {
 // worker pool's ServiceAccount under when Create is true and Name is empty.
 func workerServiceAccountName(cluster *computev1.PolarsCluster) string {
 	return fmt.Sprintf("%s-worker", cluster.Name)
+}
+
+// schedulerServiceAccount is the ServiceAccount the scheduler pod runs as,
+// and so the one its scaling RoleBinding names.
+func schedulerServiceAccount(cluster *computev1.PolarsCluster) string {
+	return resolveServiceAccountName(schedulerServiceAccountSpec(cluster), schedulerServiceAccountName(cluster))
 }
 
 // resolveServiceAccountName is the name a pod runs as: defaultName when spec
@@ -83,8 +94,7 @@ func (r *PolarsClusterReconciler) reconcileServiceAccount(ctx context.Context, c
 // pool's ServiceAccounts exist when the cluster spec requests the operator
 // create them.
 func (r *PolarsClusterReconciler) reconcilePolarsClusterServiceAccounts(ctx context.Context, cluster *computev1.PolarsCluster) error {
-	schedulerSpec := schedulerServiceAccountSpec(cluster)
-	if err := r.reconcileServiceAccount(ctx, cluster, componentScheduler, resolveServiceAccountName(schedulerSpec, schedulerServiceAccountName(cluster)), schedulerSpec); err != nil {
+	if err := r.reconcileServiceAccount(ctx, cluster, componentScheduler, schedulerServiceAccount(cluster), schedulerServiceAccountSpec(cluster)); err != nil {
 		return err
 	}
 

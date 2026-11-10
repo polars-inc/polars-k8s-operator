@@ -20,6 +20,7 @@ const LatestVersion = "latest"
 
 // PolarsClusterSpec defines the desired state of PolarsCluster
 // +kubebuilder:validation:XValidation:rule="!has(self.license.onPremEnterprise) || (has(self.acceptEula) && self.acceptEula)",message="acceptEula must be true when using the On-Prem Enterprise license"
+// +kubebuilder:validation:XValidation:rule="!has(self.workerPool.minReplicas) || (has(self.workersPerQuery) && has(self.workersPerQuery.default))",message="workersPerQuery.default is required when workerPool.minReplicas enables autoscaling"
 type PolarsClusterSpec struct {
 	// Telemetry configures exporting the cluster's OTLP traces and metrics.
 	// +optional
@@ -127,6 +128,27 @@ type PolarsClusterSpec struct {
 
 	// WorkerPool declares the cluster's pool of worker pods.
 	WorkerPool WorkerPoolDeclaration `json:"workerPool"`
+
+	// WorkersPerQuery sets how many workers each query uses.
+	// +optional
+	WorkersPerQuery *WorkersPerQuerySpec `json:"workersPerQuery,omitempty"`
+}
+
+// WorkersPerQuerySpec sets how many workers each query uses.
+type WorkersPerQuerySpec struct {
+	// Default is the number of workers a query uses when it doesn't request
+	// a count itself, and the capacity it requests from the autoscaler.
+	// Required with autoscaling; otherwise defaults to workerPool.replicas.
+	// +kubebuilder:validation:Minimum=1
+	// +optional
+	Default *int32 `json:"default,omitempty"`
+
+	// Max caps the number of workers a single query may use; a query asking
+	// for more gets this many. Unbounded when unset, though autoscaling never
+	// exceeds workerPool.maxReplicas.
+	// +kubebuilder:validation:Minimum=1
+	// +optional
+	Max *int32 `json:"max,omitempty"`
 }
 
 // ValueOrSource holds either a literal value or a reference to where the
@@ -448,6 +470,9 @@ type SchedulerSpec struct {
 
 	// ServiceAccount configures the ServiceAccount the scheduler pod runs
 	// as. Defaults to the namespace's default ServiceAccount when unset.
+	// With autoscaling it instead defaults to "<cluster>-scheduler", created
+	// by the operator, and the operator binds the scheduler's ServiceAccount
+	// to a Role that lets it read and update this PolarsCluster.
 	// +optional
 	ServiceAccount *ServiceAccountSpec `json:"serviceAccount,omitempty"`
 }
@@ -556,6 +581,8 @@ type ServiceConfig struct {
 }
 
 // WorkerPoolDeclaration defines the desired state of a PolarsCluster's worker pool.
+// +kubebuilder:validation:XValidation:rule="!has(self.maxReplicas) || has(self.minReplicas)",message="maxReplicas requires minReplicas"
+// +kubebuilder:validation:XValidation:rule="!has(self.minReplicas) || !has(self.maxReplicas) || self.minReplicas <= self.maxReplicas",message="minReplicas must not exceed maxReplicas"
 type WorkerPoolDeclaration struct {
 	// PodTemplate customizes the worker pods; it is merged into the pod
 	// the operator composes.
@@ -567,9 +594,35 @@ type WorkerPoolDeclaration struct {
 	// +optional
 	ServiceAccount *ServiceAccountSpec `json:"serviceAccount,omitempty"`
 
-	// Replicas is the desired number of worker pods.
+	// Replicas is the desired number of worker pods. With autoscaling the
+	// scheduler updates it, so leave it out of manifests that get re-applied
+	// (e.g. by GitOps), which would otherwise reset the scheduler's choice.
+	// +kubebuilder:default=0
 	// +kubebuilder:validation:Minimum=0
-	Replicas int32 `json:"replicas"`
+	// +optional
+	Replicas int32 `json:"replicas,omitempty"`
+
+	// MinReplicas enables autoscaling: the scheduler resizes the pool
+	// between minReplicas and maxReplicas to match the worker demand of
+	// running queries. Requires workersPerQuery.default and Polars
+	// on-premises 0.8.4 or later. The scheduler updates this PolarsCluster
+	// through its ServiceAccount token, which must stay mounted.
+	// +kubebuilder:validation:Minimum=0
+	// +optional
+	MinReplicas *int32 `json:"minReplicas,omitempty"`
+
+	// MaxReplicas is the most workers autoscaling scales up to. Unbounded
+	// when unset.
+	// +kubebuilder:validation:Minimum=0
+	// +optional
+	MaxReplicas *int32 `json:"maxReplicas,omitempty"`
+
+	// WorkersToKeep names worker pods to spare when scaling down, unless
+	// replicas drops below their count. The autoscaler sets it to the
+	// workers running queries.
+	// +listType=atomic
+	// +optional
+	WorkersToKeep []string `json:"workersToKeep,omitempty"`
 
 	// HeartBeatInterval between workers and the scheduler. Defaults to 5s.
 	// +optional

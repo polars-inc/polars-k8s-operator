@@ -83,6 +83,11 @@ var minSupportedVersion = utilversion.MustParseSemantic("0.7.1")
 // unknown section instead of ignoring it.
 var minCloudLicenseVersion = utilversion.MustParseSemantic("0.8.0")
 
+// 0.8.4 is the first release with both default_workers_per_query, which
+// cublet requires with autoscaling, and an autoscaler that reads an unset
+// maxReplicas as unbounded.
+var minAutoscalingVersion = utilversion.MustParseSemantic("0.8.4")
+
 // clusterVersion parses spec.version and enforces the supported minimum,
 // returning nil when the version is unset. The schema validates the format
 // at admission; this also covers objects admitted under an older schema.
@@ -99,6 +104,9 @@ func clusterVersion(cluster *computev1.PolarsCluster) (*utilversion.Version, err
 	}
 	if cluster.Spec.License.Cloud != nil && v.LessThan(minCloudLicenseVersion) {
 		return nil, fmt.Errorf("spec.version %q does not support the cloud license: it requires at least %s", cluster.Spec.Version, minCloudLicenseVersion)
+	}
+	if autoscalingEnabled(cluster) && v.LessThan(minAutoscalingVersion) {
+		return nil, fmt.Errorf("spec.version %q does not support autoscaling: it requires at least %s", cluster.Spec.Version, minAutoscalingVersion)
 	}
 	return v, nil
 }

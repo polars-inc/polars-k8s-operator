@@ -690,6 +690,10 @@ var _ = Describe("Manager", Ordered, func() {
 				err := utils.LoadImageToKindClusterWithName(realImageRepository + ":" + realImageTag)
 				Expect(err).NotTo(HaveOccurred(), "Failed to load the dist image into Kind")
 
+				By("loading the polars-on-premises tests image into Kind")
+				err = utils.LoadImageToKindClusterWithName(realImageTestsImage)
+				Expect(err).NotTo(HaveOccurred(), "Failed to load the tests image into Kind")
+
 				By("creating a Secret from the on-prem enterprise license file")
 				cmd := exec.Command("kubectl", "create", "secret", "generic", realImageLicenseSecret,
 					"-n", clusterNamespace,
@@ -717,6 +721,7 @@ var _ = Describe("Manager", Ordered, func() {
 			itScalesTheWorkerPool(realImageSpecConfig, "up", 2)
 			itScalesTheWorkerPool(realImageSpecConfig, "down", 1)
 			itRecreatesSchedulerOnTemplateChange(realImageSpecConfig)
+			itAutoscalesForQueries(realImageSpecConfig)
 		})
 	})
 })
@@ -999,14 +1004,97 @@ func itRecreatesSchedulerOnTemplateChange(cfg sharedSpecConfig) {
 	})
 }
 
+func itAutoscalesForQueries(cfg sharedSpecConfig) {
+	It("should autoscale the worker pool from zero for queries, and back once idle", func() {
+		name := realImageAutoscalingClusterName
+		schedulerPod := schedulerPodNameForCluster(name)
+		clusterField := func(g Gomega, path string) string {
+			cmd := exec.Command("kubectl", "get", "polarscluster", name, "-n", cfg.namespace, "-o", "jsonpath="+path)
+			output, err := utils.Run(cmd)
+			g.Expect(err).NotTo(HaveOccurred())
+			return output
+		}
+		workerPods := func(g Gomega) []string {
+			selector, err := selectorForWorkerPool(cfg.namespace, name)
+			g.Expect(err).NotTo(HaveOccurred())
+			g.Expect(selector).NotTo(BeEmpty())
+			names, err := podNamesForSelector(cfg.namespace, selector)
+			g.Expect(err).NotTo(HaveOccurred())
+			return names
+		}
+
+		By("creating an autoscaling PolarsCluster between 0 and 2 workers")
+		Expect(kubectlApply(realImageAutoscalingPolarsClusterManifest(cfg.namespace, name))).To(Succeed())
+		DeferCleanup(func() {
+			cmd := exec.Command("kubectl", "delete", "polarscluster", name, "-n", cfg.namespace, "--ignore-not-found")
+			_, _ = utils.Run(cmd)
+		})
+
+		By("waiting for the scheduler to become ready")
+		Eventually(func(g Gomega) {
+			g.Expect(clusterField(g, "{.status.scheduler.ready}")).To(Equal("true"))
+		}, cfg.readyTimeout, cfg.pollInterval).Should(Succeed())
+		schedulerUID, err := podJSONPath(cfg.namespace, schedulerPod, "{.metadata.uid}")
+		Expect(err).NotTo(HaveOccurred())
+
+		By("verifying the pool stays empty while no query needs workers")
+		Consistently(func(g Gomega) {
+			g.Expect(clusterField(g, "{.spec.workerPool.replicas}")).To(Equal("0"))
+			g.Expect(workerPods(g)).To(BeEmpty())
+		}, 15*time.Second, cfg.pollInterval).Should(Succeed())
+
+		By("running the compute plane's e2e queries, the distributed one on 2 workers")
+		// The pod IP serves both the scheduler and observatory ports the client dials.
+		schedulerIP, err := podJSONPath(cfg.namespace, schedulerPod, "{.status.podIP}")
+		Expect(err).NotTo(HaveOccurred())
+		testsPod := name + "-queries"
+		Expect(kubectlApply(realImageTestsPodManifest(cfg.namespace, testsPod, schedulerIP, 2))).To(Succeed())
+		DeferCleanup(func() {
+			cmd := exec.Command("kubectl", "delete", "pod", testsPod, "-n", cfg.namespace, "--ignore-not-found")
+			_, _ = utils.Run(cmd)
+		})
+
+		By("verifying the scheduler scales the pool up to 2 ready workers")
+		Eventually(func(g Gomega) {
+			g.Expect(clusterField(g, "{.spec.workerPool.replicas} {.status.workerPool.readyReplicas}")).To(Equal("2 2"))
+		}, 2*cfg.readyTimeout, cfg.pollInterval).Should(Succeed())
+
+		By("verifying the queries succeed")
+		Eventually(func(g Gomega) {
+			phase, err := podJSONPath(cfg.namespace, testsPod, "{.status.phase}")
+			g.Expect(err).NotTo(HaveOccurred())
+			if phase == string(corev1.PodFailed) {
+				logs, _ := utils.Run(exec.Command("kubectl", "logs", testsPod, "-n", cfg.namespace))
+				StopTrying("the e2e queries failed:\n" + logs).Now()
+			}
+			g.Expect(phase).To(Equal(string(corev1.PodSucceeded)))
+		}, 2*cfg.readyTimeout, 2*time.Second).Should(Succeed())
+
+		By("verifying the scheduler scales the idle pool back to zero")
+		Eventually(func(g Gomega) {
+			g.Expect(clusterField(g, "{.spec.workerPool.replicas}")).To(Equal("0"))
+			g.Expect(workerPods(g)).To(BeEmpty())
+		}, 3*time.Minute, 2*time.Second).Should(Succeed())
+
+		By("verifying scaling never restarted the scheduler")
+		Expect(podJSONPath(cfg.namespace, schedulerPod, "{.metadata.uid} {.status.containerStatuses[0].restartCount}")).
+			To(Equal(schedulerUID + " 0"))
+	})
+}
+
 const e2ePolarsClusterName = "e2e-cluster"
 
 const realImageClusterName = "e2e-real-image-cluster"
+const realImageAutoscalingClusterName = "e2e-real-image-autoscaling"
 
 // The locally built dist image keeps its "latest" tag: the manifest overrides
 // dist.tag with it, leaving spec.version to the CRD default.
 const realImageRepository = "polars-on-premises"
 const realImageTag = "latest"
+
+// realImageTestsImage is the locally built tests image paired with the dist
+// image: it runs the compute plane's e2e queries.
+const realImageTestsImage = "polars-on-premises-tests:latest"
 
 const realImageRuntimeImage = "python:3.13.9-slim-bookworm"
 
@@ -1157,6 +1245,24 @@ func routedPolarsClusterManifest(ns, name string) string {
 }
 
 func realImagePolarsClusterManifest(ns, name string) string {
+	return mustMarshalManifest(realImagePolarsCluster(ns, name))
+}
+
+// realImageAutoscalingPolarsClusterManifest zeroes replicas, which drops it
+// from the manifest: the scheduler owns it, and the pool starts empty. Version
+// "latest" clears the autoscaling version minimum, which the CRD's default
+// version is below.
+func realImageAutoscalingPolarsClusterManifest(ns, name string) string {
+	cluster := realImagePolarsCluster(ns, name)
+	cluster.Spec.Version = computev1.LatestVersion
+	cluster.Spec.WorkerPool.Replicas = 0
+	cluster.Spec.WorkerPool.MinReplicas = ptr.To[int32](0)
+	cluster.Spec.WorkerPool.MaxReplicas = ptr.To[int32](2)
+	cluster.Spec.WorkersPerQuery = &computev1.WorkersPerQuerySpec{Default: ptr.To[int32](1)}
+	return mustMarshalManifest(cluster)
+}
+
+func realImagePolarsCluster(ns, name string) *computev1.PolarsCluster {
 	// The scheduler podTemplate only names the container (matching the one
 	// the operator composes, so they merge): it gives the shared
 	// template-change spec's JSON patch an existing path to add env vars
@@ -1191,7 +1297,51 @@ func realImagePolarsClusterManifest(ns, name string) string {
 			Replicas: 1,
 		},
 	}
-	return mustMarshalManifest(cluster)
+	return cluster
+}
+
+// realImageTestsPodManifest runs the compute plane's e2e queries against the
+// scheduler, like the polars chart's helm test: a single-node query, then a
+// distributed one pinned to the given number of workers.
+func realImageTestsPodManifest(ns, name, schedulerAddress string, workers int) string {
+	release := corev1.VolumeMount{Name: "release-data", MountPath: "/emptydir"}
+	pod := &corev1.Pod{
+		TypeMeta:   metav1.TypeMeta{APIVersion: "v1", Kind: "Pod"},
+		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: ns},
+		Spec: corev1.PodSpec{
+			RestartPolicy: corev1.RestartPolicyNever,
+			InitContainers: []corev1.Container{{
+				Name:            "release",
+				Image:           realImageTestsImage,
+				ImagePullPolicy: corev1.PullNever,
+				Command:         []string{"/bin/cp", "-a", "/opt/.", "/emptydir"},
+				VolumeMounts:    []corev1.VolumeMount{release},
+			}},
+			Containers: []corev1.Container{{
+				Name:       "tester",
+				Image:      realImageRuntimeImage,
+				Command:    []string{"/emptydir/setup.sh"},
+				WorkingDir: "/tmp",
+				Env: []corev1.EnvVar{
+					{Name: "WHL_DIR", Value: "/emptydir/whl"},
+					{Name: "UV_PATH", Value: "/emptydir/bin/uv"},
+					{Name: "POLARS_COMPUTE_PLANE_TESTS_DIR", Value: "/emptydir/tests"},
+					{Name: "SCHEDULER_ADDRESS", Value: schedulerAddress},
+					// Written on the workers, which allowLocalSinks permits by default.
+					{Name: "PC_E2E_SINK", Value: "/tmp/e2e-sink"},
+					{Name: "PC_E2E_WORKERS", Value: fmt.Sprint(workers)},
+				},
+				VolumeMounts: []corev1.VolumeMount{{Name: "tmp-data", MountPath: "/tmp"}, release},
+			}},
+			Volumes: []corev1.Volume{
+				{Name: "tmp-data", VolumeSource: corev1.VolumeSource{EmptyDir: &corev1.EmptyDirVolumeSource{}}},
+				{Name: "release-data", VolumeSource: corev1.VolumeSource{EmptyDir: &corev1.EmptyDirVolumeSource{}}},
+			},
+		},
+	}
+	data, err := yaml.Marshal(pod)
+	Expect(err).NotTo(HaveOccurred())
+	return string(data)
 }
 
 func realImageLicenseFile() string {

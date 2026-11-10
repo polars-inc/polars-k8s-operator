@@ -51,7 +51,7 @@ func BuildSchedulerPodTemplate(cluster *computev1.PolarsCluster) (corev1.Pod, er
 	applyPodLabels(&pod, cluster, componentScheduler)
 	pod.Namespace = cluster.Namespace
 	pod.Name = schedulerPodName(cluster)
-	pod.Spec.ServiceAccountName = resolveServiceAccountName(schedulerServiceAccountSpec(cluster), schedulerServiceAccountName(cluster))
+	pod.Spec.ServiceAccountName = schedulerServiceAccount(cluster)
 
 	return pod, nil
 }
@@ -105,7 +105,25 @@ func computedSchedulerPodSpec(cluster *computev1.PolarsCluster, containerName st
 		{Name: observatoryDataVolumeName, MountPath: observatoryDataMountPath},
 	}, licenseMounts...)
 
-	scheduler.Int("n_workers", int64(spec.WorkerPool.Replicas))
+	if autoscalingEnabled(cluster) {
+		// The autoscaler reads replicas and its bounds from this PolarsCluster,
+		// so they stay out of the pod spec and scaling doesn't restart the
+		// scheduler.
+		k8s := cublet.Section("scaling").Section("kubernetes")
+		k8s.String("name", cluster.Name)
+		k8s.String("namespace", cluster.Namespace)
+	} else if spec.WorkerPool.Replicas > 0 {
+		// cublet rejects n_workers=0; an empty pool runs without it.
+		scheduler.Int("n_workers", int64(spec.WorkerPool.Replicas))
+	}
+	if wpq := spec.WorkersPerQuery; wpq != nil {
+		if wpq.Default != nil {
+			scheduler.Int("default_workers_per_query", int64(*wpq.Default))
+		}
+		if wpq.Max != nil {
+			scheduler.Int("max_workers_per_query", int64(*wpq.Max))
+		}
+	}
 
 	computedAnonymousResultsEnv(scheduler.Section("anonymous_result_location"), spec.AnonymousResults)
 
