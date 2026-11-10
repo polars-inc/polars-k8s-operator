@@ -6,8 +6,10 @@ import (
 	"errors"
 	"fmt"
 	"hash/fnv"
+	"slices"
 
 	corev1 "k8s.io/api/core/v1"
+	rbacv1 "k8s.io/api/rbac/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -21,7 +23,7 @@ import (
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	gatewayv1 "sigs.k8s.io/gateway-api/apis/v1"
 
-	computev1 "github.com/polars-inc/polars-k8s-operator/api/v1alpha1"
+	computev1 "github.com/polars-inc/polars-k8s-operator/api/v1"
 )
 
 const (
@@ -63,6 +65,7 @@ type PolarsClusterReconciler struct {
 // +kubebuilder:rbac:groups="",resources=services,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups="",resources=serviceaccounts,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=gateway.networking.k8s.io,resources=grpcroutes;httproutes,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=rbac.authorization.k8s.io,resources=roles;rolebindings,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups="",resources=events,verbs=create;patch
 // +kubebuilder:rbac:groups=events.k8s.io,resources=events,verbs=create;patch
 
@@ -92,6 +95,15 @@ func (r *PolarsClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 	}
 
 	if err := r.reconcilePolarsClusterServiceAccounts(ctx, cluster); err != nil {
+		var se *specError
+		if errors.As(err, &se) {
+			return r.recordSpecError(ctx, cluster, conditionReady, se)
+		}
+		return ctrl.Result{}, err
+	}
+
+	// Before the scheduler, whose autoscaler reads the PolarsCluster on startup.
+	if err := r.reconcileScalingRBAC(ctx, cluster); err != nil {
 		var se *specError
 		if errors.As(err, &se) {
 			return r.recordSpecError(ctx, cluster, conditionReady, se)
@@ -360,6 +372,15 @@ func (r *PolarsClusterReconciler) reconcileWorkerPool(ctx context.Context, clust
 		}
 	} else if lackingPodCount < 0 {
 		var numPodsToDelete = -lackingPodCount
+		// Delete workers outside workersToKeep first: the autoscaler keeps the
+		// ones running queries there.
+		kept := func(pod corev1.Pod) int {
+			if slices.Contains(wp.WorkersToKeep, pod.Name) {
+				return 1
+			}
+			return 0
+		}
+		slices.SortStableFunc(activeManagedPods, func(a, b corev1.Pod) int { return kept(a) - kept(b) })
 		for i := range numPodsToDelete {
 			pod := &activeManagedPods[i]
 			if err := r.Delete(ctx, pod); err != nil {
@@ -575,7 +596,9 @@ func (r *PolarsClusterReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		For(&computev1.PolarsCluster{}).
 		Owns(&corev1.Pod{}).
 		Owns(&corev1.Service{}).
-		Owns(&corev1.ServiceAccount{})
+		Owns(&corev1.ServiceAccount{}).
+		Owns(&rbacv1.Role{}).
+		Owns(&rbacv1.RoleBinding{})
 	if r.GatewayAPIEnabled {
 		builder = builder.
 			Owns(&gatewayv1.GRPCRoute{}).

@@ -1,0 +1,29 @@
+apiVersion: compute.pola.rs/v1
+kind: PolarsCluster
+metadata:
+  labels:
+    app.kubernetes.io/name: polars-k8s-operator
+    app.kubernetes.io/managed-by: kustomize
+  name: polars-autoscaling
+spec:
+  acceptEula: true
+  # Autoscaling needs Polars on-premises 0.8.4 or later.
+  version: "0.10.1"
+  license:
+    onPremEnterprise:
+      secretName: license
+      secretProperty: license.json
+  runtime:
+    composed: {}
+  # Queries that don't ask for a worker count get 2 workers, and none get more
+  # than 4.
+  workersPerQuery:
+    default: 2
+    max: 4
+  workerPool:
+    # The scheduler scales the pool between minReplicas and maxReplicas to the
+    # summed demand of running queries. When demand drops it scales down,
+    # keeping the workers that still run queries. replicas is left out
+    # because the scheduler owns it.
+    minReplicas: 0
+    maxReplicas: 8

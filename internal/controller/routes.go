@@ -16,7 +16,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	gatewayv1 "sigs.k8s.io/gateway-api/apis/v1"
 
-	computev1 "github.com/polars-inc/polars-k8s-operator/api/v1alpha1"
+	computev1 "github.com/polars-inc/polars-k8s-operator/api/v1"
 )
 
 const (
@@ -123,7 +123,7 @@ func (r *PolarsClusterReconciler) reconcileRoutes(ctx context.Context, cluster *
 	for _, target := range routeTargets(cluster) {
 		if target.spec == nil {
 			if r.GatewayAPIEnabled {
-				if err := r.deleteOwnedRoute(ctx, cluster, target.route); err != nil {
+				if err := r.deleteOwned(ctx, cluster, target.route); err != nil {
 					return routesStatus{}, err
 				}
 			}
@@ -189,14 +189,15 @@ func routeMessage(target routeTarget, detail string) string {
 	return fmt.Sprintf("%s %s: %s", target.kind, target.route.GetName(), detail)
 }
 
-func (r *PolarsClusterReconciler) deleteOwnedRoute(ctx context.Context, cluster *computev1.PolarsCluster, route client.Object) error {
-	if err := r.Get(ctx, client.ObjectKeyFromObject(route), route); err != nil {
+// deleteOwned deletes obj if it exists and cluster controls it.
+func (r *PolarsClusterReconciler) deleteOwned(ctx context.Context, cluster *computev1.PolarsCluster, obj client.Object) error {
+	if err := r.Get(ctx, client.ObjectKeyFromObject(obj), obj); err != nil {
 		return client.IgnoreNotFound(err)
 	}
-	if !v1.IsControlledBy(route, cluster) {
+	if !v1.IsControlledBy(obj, cluster) {
 		return nil
 	}
-	return client.IgnoreNotFound(r.Delete(ctx, route))
+	return client.IgnoreNotFound(r.Delete(ctx, obj))
 }
 
 func routeAccepted(target routeTarget) bool {

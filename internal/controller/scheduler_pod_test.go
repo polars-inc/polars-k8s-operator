@@ -8,8 +8,9 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	utilversion "k8s.io/apimachinery/pkg/util/version"
+	"k8s.io/utils/ptr"
 
-	computev1 "github.com/polars-inc/polars-k8s-operator/api/v1alpha1"
+	computev1 "github.com/polars-inc/polars-k8s-operator/api/v1"
 )
 
 const (
@@ -546,6 +547,62 @@ func TestBuildSchedulerPodTemplate_NWorkersMatchesReplicas(t *testing.T) {
 	nWorkers, ok := findEnv(result.Spec.Containers[0].Env, "PC_CUBLET__scheduler__n_workers")
 	g.Expect(ok).To(BeTrue())
 	g.Expect(nWorkers.Value).To(Equal("4"))
+
+	cluster.Spec.WorkerPool.Replicas = 0
+	result, err = BuildSchedulerPodTemplate(cluster)
+	g.Expect(err).NotTo(HaveOccurred())
+	_, ok = findEnv(result.Spec.Containers[0].Env, "PC_CUBLET__scheduler__n_workers")
+	g.Expect(ok).To(BeFalse(), "cublet rejects n_workers=0")
+}
+
+func TestBuildSchedulerPodTemplate_Autoscaling(t *testing.T) {
+	g := NewWithT(t)
+
+	cluster := schedulerCluster(corev1.Container{})
+	cluster.Spec.WorkerPool.Replicas = 4
+	cluster.Spec.WorkerPool.MinReplicas = ptr.To[int32](0)
+	cluster.Spec.WorkersPerQuery = &computev1.WorkersPerQuerySpec{Default: ptr.To[int32](2), Max: ptr.To[int32](8)}
+
+	result, err := BuildSchedulerPodTemplate(cluster)
+	g.Expect(err).NotTo(HaveOccurred())
+
+	env := result.Spec.Containers[0].Env
+	for name, value := range map[string]string{
+		"PC_CUBLET__scaling__kubernetes__name":            testClusterName,
+		"PC_CUBLET__scaling__kubernetes__namespace":       testClusterNamespace,
+		"PC_CUBLET__scheduler__default_workers_per_query": "2",
+		"PC_CUBLET__scheduler__max_workers_per_query":     "8",
+	} {
+		e, ok := findEnv(env, name)
+		g.Expect(ok).To(BeTrue(), name)
+		g.Expect(e.Value).To(Equal(value), name)
+	}
+	_, ok := findEnv(env, "PC_CUBLET__scheduler__n_workers")
+	g.Expect(ok).To(BeFalse(), "n_workers would restart the scheduler on every scale")
+	g.Expect(result.Spec.ServiceAccountName).To(Equal(testClusterName+"-scheduler"),
+		"an autoscaling scheduler gets its own ServiceAccount")
+
+	scaledUp := cluster.DeepCopy()
+	scaledUp.Spec.WorkerPool.Replicas = 9
+	scaledUp.Spec.WorkerPool.WorkersToKeep = []string{"analytics-worker-abcde"}
+	scaledUpPod, err := BuildSchedulerPodTemplate(scaledUp)
+	g.Expect(err).NotTo(HaveOccurred())
+	g.Expect(scaledUpPod.Spec).To(Equal(result.Spec), "scaling must not change the scheduler pod")
+}
+
+func TestClusterVersion_AutoscalingMinimum(t *testing.T) {
+	g := NewWithT(t)
+
+	cluster := schedulerCluster(corev1.Container{})
+	cluster.Spec.WorkerPool.MinReplicas = ptr.To[int32](0)
+
+	cluster.Spec.Version = "0.8.3"
+	_, err := clusterVersion(cluster)
+	g.Expect(err).To(MatchError(ContainSubstring("does not support autoscaling: it requires at least 0.8.4")))
+
+	cluster.Spec.Version = "0.8.4"
+	_, err = clusterVersion(cluster)
+	g.Expect(err).NotTo(HaveOccurred())
 }
 
 func TestBuildSchedulerPodTemplate_HostMetricsDisabled(t *testing.T) {
