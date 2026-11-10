@@ -684,13 +684,13 @@ var _ = Describe("Manager", Ordered, func() {
 			})
 		})
 
-		Context("Real polars-on-premises image", Label("real-image"), func() {
+		Context("Real polars-nanook-compute image", Label("real-image"), func() {
 			BeforeAll(func() {
-				By("loading the polars-on-premises dist image into Kind")
+				By("loading the polars-nanook-compute dist image into Kind")
 				err := utils.LoadImageToKindClusterWithName(realImageRepository + ":" + realImageTag)
 				Expect(err).NotTo(HaveOccurred(), "Failed to load the dist image into Kind")
 
-				By("loading the polars-on-premises tests image into Kind")
+				By("loading the polars-nanook-compute tests image into Kind")
 				err = utils.LoadImageToKindClusterWithName(realImageTestsImage)
 				Expect(err).NotTo(HaveOccurred(), "Failed to load the tests image into Kind")
 
@@ -1089,12 +1089,12 @@ const realImageAutoscalingClusterName = "e2e-real-image-autoscaling"
 
 // The locally built dist image keeps its "latest" tag: the manifest overrides
 // dist.tag with it, leaving spec.version to the CRD default.
-const realImageRepository = "polars-on-premises"
+const realImageRepository = "polars-nanook-compute"
 const realImageTag = "latest"
 
 // realImageTestsImage is the locally built tests image paired with the dist
 // image: it runs the compute plane's e2e queries.
-const realImageTestsImage = "polars-on-premises-tests:latest"
+const realImageTestsImage = "polars-nanook-compute-tests:latest"
 
 const realImageRuntimeImage = "python:3.13.9-slim-bookworm"
 

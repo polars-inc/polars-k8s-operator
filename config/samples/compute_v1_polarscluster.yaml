@@ -16,7 +16,7 @@ spec:
   runtime:
     composed:
       dist:
-        repository: polars-on-premises
+        repository: polars-nanook-compute
         tag: "latest"
         pullPolicy: IfNotPresent
   workerPool:

@@ -192,7 +192,7 @@ _Appears in:_
 
 | Field | Description | Default | Validation |
 | --- | --- | --- | --- |
-| `dist` _[ImageSpec](#imagespec)_ | Dist is the Polars distribution image. Repository defaults to<br />"polarscloud/polars-on-premises" and tag defaults to spec.version. |  | Optional: \{\} <br /> |
+| `dist` _[ImageSpec](#imagespec)_ | Dist is the Polars distribution image. Repository defaults to<br />"polarsinc/polars-nanook-compute" and tag defaults to spec.version. |  | Optional: \{\} <br /> |
 | `runtime` _[ImageSpec](#imagespec)_ | Runtime is the Python base image the distribution runs on. Defaults to<br />"python:3.13.9-slim-bookworm". |  | Optional: \{\} <br /> |
 | `requirements` _string_ | Requirements is a requirements.txt to install additional Python<br />packages into the runtime. |  | Optional: \{\} <br /> |
 | `polarsExtras` _string_ | PolarsExtras are the Polars pip extras to install. Must include<br />"cloudpickle". Defaults to the full extras set. |  | Optional: \{\} <br /> |

@@ -278,7 +278,7 @@ type RuntimeSpec struct {
 // +kubebuilder:validation:XValidation:rule="!has(self.polarsExtras) || size(self.polarsExtras) == 0 || self.polarsExtras.contains('cloudpickle')",message="polarsExtras must include cloudpickle"
 type ComposedRuntimeSpec struct {
 	// Dist is the Polars distribution image. Repository defaults to
-	// "polarscloud/polars-on-premises" and tag defaults to spec.version.
+	// "polarsinc/polars-nanook-compute" and tag defaults to spec.version.
 	// +optional
 	Dist *ImageSpec `json:"dist,omitempty"`
 
