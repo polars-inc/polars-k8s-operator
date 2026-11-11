@@ -1,12 +1,14 @@
 package controller
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"hash/fnv"
 	"slices"
+	"strings"
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
@@ -307,6 +309,17 @@ func (r *PolarsClusterReconciler) reconcileScheduler(ctx context.Context, cluste
 		return computev1.SchedulerStatus{Ready: false}, "scheduler pod is being recreated for a template change", nil
 	}
 
+	// The kubelet never restarts a stopped pod, and its fixed name means it
+	// has to be deleted before a replacement can be created.
+	if existing.DeletionTimestamp.IsZero() && podIsStopped(&existing) {
+		reason := fmt.Sprintf("%s: %s", existing.Status.Phase, podNotReadyMessage(&existing))
+		if err := r.Delete(ctx, &existing); err != nil && !apierrors.IsNotFound(err) {
+			return computev1.SchedulerStatus{}, "", err
+		}
+		r.Recorder.Eventf(cluster, nil, corev1.EventTypeWarning, "SchedulerPodRecreating", actionDeletePod, "Deleted stopped scheduler pod %s (%s)", existing.Name, reason)
+		return computev1.SchedulerStatus{Ready: false}, "scheduler pod is being recreated after it stopped (" + reason + ")", nil
+	}
+
 	if podIsReady(&existing) {
 		return computev1.SchedulerStatus{Ready: true}, "", nil
 	}
@@ -354,6 +367,12 @@ func (r *PolarsClusterReconciler) reconcileWorkerPool(ctx context.Context, clust
 				return computev1.WorkerPoolStatus{}, "", err
 			}
 			r.Recorder.Eventf(cluster, nil, corev1.EventTypeNormal, "WorkerPodRecreating", actionDeletePod, "Deleted worker pod %s for a template change", pod.Name)
+			continue
+		}
+		// Like a ReplicaSet: a stopped pod no longer counts, so it gets
+		// replaced, but it is left for inspection until a template change
+		// or the cluster's deletion removes it.
+		if podIsStopped(&pod) {
 			continue
 		}
 		activeManagedPods = append(activeManagedPods, pod)
@@ -417,7 +436,13 @@ func (r *PolarsClusterReconciler) reconcileWorkerPool(ctx context.Context, clust
 		pod := &activeManagedPods[i]
 		if podIsReady(pod) {
 			readyReplicas++
-		} else if notReadyPod == nil {
+		} else if notReadyPod == nil || cmp.Or(
+			pod.CreationTimestamp.Compare(notReadyPod.CreationTimestamp.Time),
+			strings.Compare(pod.Name, notReadyPod.Name),
+		) < 0 {
+			// Report the pod stuck longest. The name tie-break matters: the
+			// cache lists pods in map order, and a message that changes
+			// between reconciles rewrites status and re-triggers reconciliation.
 			notReadyPod = pod
 		}
 	}
@@ -564,6 +589,10 @@ func serviceConfig(config *computev1.ExposedServiceConfig) *computev1.ServiceCon
 	return &config.ServiceConfig
 }
 
+func podIsStopped(pod *corev1.Pod) bool {
+	return pod.Status.Phase == corev1.PodFailed || pod.Status.Phase == corev1.PodSucceeded
+}
+
 func podIsReady(pod *corev1.Pod) bool {
 	for _, cond := range pod.Status.Conditions {
 		if cond.Type == corev1.PodReady && cond.Status == corev1.ConditionTrue {
@@ -573,30 +602,75 @@ func podIsReady(pod *corev1.Pod) bool {
 	return false
 }
 
-// podNotReadyMessage describes why pod isn't Ready, preferring the kubelet's
-// own PodReady condition (e.g. "containers with unready status: [...]"),
-// falling back to a not-ready container's waiting/terminated reason.
+// podNotReadyMessage describes why pod isn't Ready, checking the earliest
+// stage of pod startup first. The kubelet's PodReady condition comes last
+// because it names the unready containers without saying why.
 func podNotReadyMessage(pod *corev1.Pod) string {
 	for _, cond := range pod.Status.Conditions {
-		if cond.Type != corev1.PodReady || cond.Status == corev1.ConditionTrue {
+		if cond.Type == corev1.PodScheduled && cond.Status == corev1.ConditionFalse {
+			if msg := reasonMessage(cond.Reason, cond.Message); msg != "" {
+				return msg
+			}
+		}
+	}
+	if pod.Status.Reason != "" {
+		return reasonMessage(pod.Status.Reason, pod.Status.Message)
+	}
+	for _, cs := range pod.Status.InitContainerStatuses {
+		if t := cs.State.Terminated; t != nil && t.ExitCode == 0 {
 			continue
 		}
-		if cond.Message != "" {
-			return cond.Message
-		}
-		if cond.Reason != "" {
-			return cond.Reason
+		if msg := containerNotReadyMessage("init container", &cs); msg != "" {
+			return msg
 		}
 	}
 	for _, cs := range pod.Status.ContainerStatuses {
-		if cs.State.Waiting != nil && cs.State.Waiting.Reason != "" {
-			return fmt.Sprintf("container %s is waiting: %s", cs.Name, cs.State.Waiting.Reason)
+		if msg := containerNotReadyMessage("container", &cs); msg != "" {
+			return msg
 		}
-		if cs.State.Terminated != nil && cs.State.Terminated.Reason != "" {
-			return fmt.Sprintf("container %s terminated: %s", cs.Name, cs.State.Terminated.Reason)
+	}
+	for _, cond := range pod.Status.Conditions {
+		if cond.Type == corev1.PodReady && cond.Status != corev1.ConditionTrue {
+			if msg := reasonMessage(cond.Reason, cond.Message); msg != "" {
+				return msg
+			}
 		}
 	}
 	return "pod is not Ready"
+}
+
+// containerNotReadyMessage returns "" for a running container. A waiting
+// container's message includes its last termination, since CrashLoopBackOff
+// alone doesn't say why the container crashed.
+func containerNotReadyMessage(kind string, cs *corev1.ContainerStatus) string {
+	switch {
+	case cs.State.Waiting != nil && cs.State.Waiting.Reason != "":
+		msg := fmt.Sprintf("%s %s is waiting: %s", kind, cs.Name, reasonMessage(cs.State.Waiting.Reason, cs.State.Waiting.Message))
+		if last := cs.LastTerminationState.Terminated; last != nil {
+			msg += fmt.Sprintf("; last terminated: %s", terminatedMessage(last))
+		}
+		return msg
+	case cs.State.Terminated != nil:
+		return fmt.Sprintf("%s %s terminated: %s", kind, cs.Name, terminatedMessage(cs.State.Terminated))
+	}
+	return ""
+}
+
+func terminatedMessage(t *corev1.ContainerStateTerminated) string {
+	if t.Reason == "" {
+		return fmt.Sprintf("exit code %d", t.ExitCode)
+	}
+	return fmt.Sprintf("%s (exit code %d)", t.Reason, t.ExitCode)
+}
+
+func reasonMessage(reason, message string) string {
+	switch {
+	case reason == "":
+		return message
+	case message == "":
+		return reason
+	}
+	return reason + ": " + message
 }
 
 // schedulerPodName is stable (no GenerateName): the scheduler is a singleton

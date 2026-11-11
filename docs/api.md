@@ -690,7 +690,7 @@ _Appears in:_
 | Field | Description | Default | Validation |
 | --- | --- | --- | --- |
 | `services` _[SchedulerServicesSpec](#schedulerservicesspec)_ | Services configures the Services exposing the scheduler's ports. |  | Optional: \{\} <br /> |
-| `podTemplate` _[PodTemplateSpec](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.36/#podtemplatespec-v1-core)_ | PodTemplate customizes the scheduler pod; it is merged into the pod<br />the operator composes. |  | Optional: \{\} <br /> |
+| `podTemplate` _[PodTemplateSpec](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.36/#podtemplatespec-v1-core)_ | PodTemplate customizes the scheduler pod; it is merged into the pod<br />the operator composes. Like a StatefulSet's, its restartPolicy must be<br />Always: a scheduler pod that fails is deleted and created again. |  | Optional: \{\} <br /> |
 | `serviceAccount` _[ServiceAccountSpec](#serviceaccountspec)_ | ServiceAccount configures the ServiceAccount the scheduler pod runs<br />as. Defaults to the namespace's default ServiceAccount when unset.<br />With autoscaling it instead defaults to "<cluster>-scheduler", created<br />by the operator, and the operator binds the scheduler's ServiceAccount<br />to a Role that lets it read and update this PolarsCluster. |  | Optional: \{\} <br /> |
 
 
@@ -909,7 +909,7 @@ _Appears in:_
 
 | Field | Description | Default | Validation |
 | --- | --- | --- | --- |
-| `podTemplate` _[PodTemplateSpec](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.36/#podtemplatespec-v1-core)_ | PodTemplate customizes the worker pods; it is merged into the pod<br />the operator composes. |  | Optional: \{\} <br /> |
+| `podTemplate` _[PodTemplateSpec](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.36/#podtemplatespec-v1-core)_ | PodTemplate customizes the worker pods; it is merged into the pod<br />the operator composes. Like a ReplicaSet's, its restartPolicy must be<br />Always: a worker pod that fails is replaced by a new one, and the<br />failed pod is left in place for inspection. |  | Optional: \{\} <br /> |
 | `serviceAccount` _[ServiceAccountSpec](#serviceaccountspec)_ | ServiceAccount configures the ServiceAccount the worker pods run as.<br />Defaults to the namespace's default ServiceAccount when unset. |  | Optional: \{\} <br /> |
 | `replicas` _integer_ | Replicas is the desired number of worker pods. With autoscaling the<br />scheduler updates it, so leave it out of manifests that get re-applied<br />(e.g. by GitOps), which would otherwise reset the scheduler's choice. | 0 | Minimum: 0 <br />Optional: \{\} <br /> |
 | `minReplicas` _integer_ | MinReplicas enables autoscaling: the scheduler resizes the pool<br />between minReplicas and maxReplicas to match the worker demand of<br />running queries. Requires workersPerQuery.default and Polars<br />on-premises 0.8.4 or later. The scheduler updates this PolarsCluster<br />through its ServiceAccount token, which must stay mounted. |  | Minimum: 0 <br />Optional: \{\} <br /> |
@@ -934,7 +934,7 @@ _Appears in:_
 
 | Field | Description | Default | Validation |
 | --- | --- | --- | --- |
-| `replicas` _integer_ | Replicas is the number of non-terminating worker pods. |  | Optional: \{\} <br /> |
+| `replicas` _integer_ | Replicas is the number of worker pods that are neither terminating nor<br />stopped (Failed or Succeeded). |  | Optional: \{\} <br /> |
 | `readyReplicas` _integer_ | ReadyReplicas is the number of worker pods that are Ready. |  | Optional: \{\} <br /> |
 | `selector` _string_ | Selector is the label selector matching the pool's worker pods, in<br />string form. |  | Optional: \{\} <br /> |
 
