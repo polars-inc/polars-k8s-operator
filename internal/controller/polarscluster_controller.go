@@ -291,6 +291,17 @@ func (r *PolarsClusterReconciler) reconcileScheduler(ctx context.Context, cluste
 		return computev1.SchedulerStatus{Ready: false}, "scheduler pod is being recreated for a template change", nil
 	}
 
+	// The kubelet never restarts a stopped pod, and its fixed name means it
+	// has to be deleted before a replacement can be created.
+	if existing.DeletionTimestamp.IsZero() && podIsStopped(&existing) {
+		reason := fmt.Sprintf("%s: %s", existing.Status.Phase, podNotReadyMessage(&existing))
+		if err := r.Delete(ctx, &existing); err != nil && !apierrors.IsNotFound(err) {
+			return computev1.SchedulerStatus{}, "", err
+		}
+		r.Recorder.Eventf(cluster, nil, corev1.EventTypeWarning, "SchedulerPodRecreating", actionDeletePod, "Deleted stopped scheduler pod %s (%s)", existing.Name, reason)
+		return computev1.SchedulerStatus{Ready: false}, "scheduler pod is being recreated after it stopped (" + reason + ")", nil
+	}
+
 	if podIsReady(&existing) {
 		return computev1.SchedulerStatus{Ready: true}, "", nil
 	}
@@ -338,6 +349,12 @@ func (r *PolarsClusterReconciler) reconcileWorkerPool(ctx context.Context, clust
 				return computev1.WorkerPoolStatus{}, "", err
 			}
 			r.Recorder.Eventf(cluster, nil, corev1.EventTypeNormal, "WorkerPodRecreating", actionDeletePod, "Deleted worker pod %s for a template change", pod.Name)
+			continue
+		}
+		// Like a ReplicaSet: a stopped pod no longer counts, so it gets
+		// replaced, but it is left for inspection until a template change
+		// or the cluster's deletion removes it.
+		if podIsStopped(&pod) {
 			continue
 		}
 		activeManagedPods = append(activeManagedPods, pod)
@@ -547,6 +564,10 @@ func serviceConfig(config *computev1.ExposedServiceConfig) *computev1.ServiceCon
 		return nil
 	}
 	return &config.ServiceConfig
+}
+
+func podIsStopped(pod *corev1.Pod) bool {
+	return pod.Status.Phase == corev1.PodFailed || pod.Status.Phase == corev1.PodSucceeded
 }
 
 func podIsReady(pod *corev1.Pod) bool {

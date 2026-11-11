@@ -2191,7 +2191,8 @@ spec:
                   podTemplate:
                     description: |-
                       PodTemplate customizes the scheduler pod; it is merged into the pod
-                      the operator composes.
+                      the operator composes. Like a StatefulSet's, its restartPolicy must be
+                      Always: a scheduler pod that fails is deleted and created again.
                     properties:
                       metadata:
                         description: |-
@@ -10756,6 +10757,10 @@ spec:
                         - containers
                         type: object
                     type: object
+                    x-kubernetes-validations:
+                    - message: spec.restartPolicy must be Always
+                      rule: '!has(self.spec) || !has(self.spec.restartPolicy) || self.spec.restartPolicy
+                        == ''Always'''
                   serviceAccount:
                     description: |-
                       ServiceAccount configures the ServiceAccount the scheduler pod runs
@@ -11492,7 +11497,9 @@ spec:
                   podTemplate:
                     description: |-
                       PodTemplate customizes the worker pods; it is merged into the pod
-                      the operator composes.
+                      the operator composes. Like a ReplicaSet's, its restartPolicy must be
+                      Always: a worker pod that fails is replaced by a new one, and the
+                      failed pod is left in place for inspection.
                     properties:
                       metadata:
                         description: |-
@@ -20057,6 +20064,10 @@ spec:
                         - containers
                         type: object
                     type: object
+                    x-kubernetes-validations:
+                    - message: spec.restartPolicy must be Always
+                      rule: '!has(self.spec) || !has(self.spec.restartPolicy) || self.spec.restartPolicy
+                        == ''Always'''
                   replicas:
                     default: 0
                     description: |-
@@ -20831,8 +20842,9 @@ spec:
                     format: int32
                     type: integer
                   replicas:
-                    description: Replicas is the number of non-terminating worker
-                      pods.
+                    description: |-
+                      Replicas is the number of worker pods that are neither terminating nor
+                      stopped (Failed or Succeeded).
                     format: int32
                     type: integer
                   selector:
