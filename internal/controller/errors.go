@@ -10,8 +10,7 @@ import (
 // specError marks an error caused by the cluster's spec (an invalid
 // podTemplate, an API-server-rejected computed object) rather than an
 // unexpected/infrastructure failure. Reconcile surfaces it as a status
-// condition + Warning Event and returns nil, instead of the default noisy
-// requeue-with-backoff.
+// condition + Warning Event.
 type specError struct {
 	reason string
 	err    error
@@ -26,10 +25,8 @@ func specErrorf(reason, format string, a ...any) *specError {
 	return &specError{reason: reason, err: fmt.Errorf(format, a...)}
 }
 
-// classifyAPIError reclassifies err as a spec error when the API server
-// rejected the request because of the object's content (Invalid/Forbidden —
-// i.e. the user's spec), leaving every other error (conflict, timeout, not
-// found, etc.) unchanged.
+// classifyAPIError wraps an Invalid or Forbidden rejection as a spec error,
+// so it shows up in the cluster's status.
 func classifyAPIError(reason string, err error) error {
 	if apierrors.IsInvalid(err) || apierrors.IsForbidden(err) {
 		return &specError{reason: reason, err: err}

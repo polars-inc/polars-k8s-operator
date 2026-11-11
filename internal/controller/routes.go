@@ -8,6 +8,7 @@ import (
 	"slices"
 	"time"
 
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -24,10 +25,9 @@ const (
 	reasonNotAccepted    = "NotAccepted"
 	reasonRouteConflict  = "RouteConflict"
 
-	// routeConflictRetryInterval is how often a cluster whose route name is
-	// taken by an object it doesn't control checks again: that object going
-	// away doesn't trigger a reconcile.
-	routeConflictRetryInterval = time.Minute
+	// routeRetryInterval is how often a conflicting or Forbidden route is
+	// retried, as neither clearing triggers a reconcile.
+	routeRetryInterval = time.Minute
 )
 
 func GatewayAPIInstalled(mapper meta.RESTMapper) (bool, error) {
@@ -107,7 +107,7 @@ type routesStatus struct {
 	reason    string
 	message   string
 	// Tracked apart from reason, which keeps only the first failure.
-	conflict bool
+	retry bool
 }
 
 func (s *routesStatus) notReady(reason, message string) {
@@ -145,7 +145,7 @@ func (r *PolarsClusterReconciler) reconcileRoutes(ctx context.Context, cluster *
 				return routesStatus{}, err
 			}
 			status.notReady(se.reason, routeMessage(target, se.Error()))
-			status.conflict = status.conflict || se.reason == reasonRouteConflict
+			status.retry = status.retry || se.reason == reasonRouteConflict || apierrors.IsForbidden(se)
 			continue
 		}
 		if !routeAccepted(target) {

@@ -181,17 +181,17 @@ func (r *PolarsClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		r.Recorder.Eventf(cluster, nil, corev1.EventTypeWarning, "NotReady", actionReconcile, "%s", readyMessage)
 	}
 
-	if routes.conflict {
-		return ctrl.Result{RequeueAfter: routeConflictRetryInterval}, nil
+	if routes.retry {
+		return ctrl.Result{RequeueAfter: routeRetryInterval}, nil
 	}
 	return ctrl.Result{}, nil
 }
 
 // recordSpecError surfaces a spec-caused error as a False condition of
 // condType (mirrored onto conditionReady when condType differs) plus a
-// Warning Event, and returns nil so the caller doesn't trigger the default
-// requeue-with-backoff: only a spec change (or the underlying rejection
-// clearing) can fix it, and that already re-triggers reconciliation.
+// Warning Event. Forbidden is also returned, for requeue-with-backoff: its
+// cause usually lies outside the spec (a missing ServiceAccount, a quota),
+// and fixing that triggers no reconcile.
 func (r *PolarsClusterReconciler) recordSpecError(ctx context.Context, cluster *computev1.PolarsCluster, condType string, se *specError) (ctrl.Result, error) {
 	meta.SetStatusCondition(&cluster.Status.Conditions, v1.Condition{
 		Type:               condType,
@@ -214,6 +214,9 @@ func (r *PolarsClusterReconciler) recordSpecError(ctx context.Context, cluster *
 	cluster.Status.ObservedGeneration = cluster.Generation
 	if err := r.Status().Update(ctx, cluster); err != nil {
 		return ctrl.Result{}, err
+	}
+	if apierrors.IsForbidden(se) {
+		return ctrl.Result{}, se
 	}
 	return ctrl.Result{}, nil
 }

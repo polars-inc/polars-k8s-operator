@@ -2,6 +2,7 @@ package controller
 
 import (
 	"context"
+	"errors"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -242,7 +243,7 @@ var _ = Describe("PolarsCluster Gateway API routes", func() {
 		defer func() { _ = k8sClient.Delete(ctx, foreign) }()
 
 		result := reconcileCluster(ctx, k8sClient, cluster, true)
-		Expect(result.RequeueAfter).To(Equal(routeConflictRetryInterval))
+		Expect(result.RequeueAfter).To(Equal(routeRetryInterval))
 
 		expectRoutesReady(cluster, metav1.ConditionFalse, reasonRouteConflict)
 		Expect(meta.IsStatusConditionFalse(cluster.Status.Conditions, conditionReady)).To(BeTrue())
@@ -250,6 +251,28 @@ var _ = Describe("PolarsCluster Gateway API routes", func() {
 			To(Succeed())
 		Expect(k8sClient.Get(ctx, types.NamespacedName{Name: "routes-conflict-scheduler", Namespace: validationNamespace}, &gatewayv1.GRPCRoute{})).
 			To(Succeed())
+	})
+
+	It("should report a Forbidden route as RouteRejected and retry", func() {
+		ctx := context.Background()
+		cluster := routedCluster("routes-forbidden")
+		Expect(k8sClient.Create(ctx, cluster)).To(Succeed())
+		defer func() { _ = k8sClient.Delete(ctx, cluster) }()
+
+		watchClient, err := client.NewWithWatch(cfg, client.Options{Scheme: k8sClient.Scheme()})
+		Expect(err).NotTo(HaveOccurred())
+		rejectRoutes := interceptor.NewClient(watchClient, interceptor.Funcs{
+			Create: func(ctx context.Context, c client.WithWatch, obj client.Object, opts ...client.CreateOption) error {
+				if _, ok := obj.(*gatewayv1.HTTPRoute); ok {
+					return apierrors.NewForbidden(gatewayv1.Resource("httproutes"), obj.GetName(), errors.New("denied by policy"))
+				}
+				return c.Create(ctx, obj, opts...)
+			},
+		})
+
+		result := reconcileCluster(ctx, rejectRoutes, cluster, true)
+		Expect(result.RequeueAfter).To(Equal(routeRetryInterval))
+		expectRoutesReady(cluster, metav1.ConditionFalse, "RouteRejected")
 	})
 
 	It("should reject a route without parentRefs", func() {
