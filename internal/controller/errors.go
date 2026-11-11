@@ -20,6 +20,8 @@ type specError struct {
 func (e *specError) Error() string { return e.err.Error() }
 func (e *specError) Unwrap() error { return e.err }
 
+var errConflict = errors.New("already controlled by another object")
+
 // specErrorf builds a spec error raised directly by the operator's own
 // validation (e.g. a podTemplate missing required containers).
 func specErrorf(reason, format string, a ...any) *specError {
