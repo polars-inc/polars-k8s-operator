@@ -547,7 +547,7 @@ var _ = Describe("PolarsCluster lifecycle events", func() {
 		},
 	}
 
-	It("should record Normal events for pod creation, template-change recreation, and scale-down", func() {
+	It("should record events for pod creation, template-change recreation, scale-down, and stopped-pod replacement", func() {
 		ctx := context.Background()
 		name := types.NamespacedName{Name: "lifecycle-events", Namespace: validationNamespace}
 		cluster := &computev1.PolarsCluster{
@@ -604,6 +604,47 @@ var _ = Describe("PolarsCluster lifecycle events", func() {
 		_, err = reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: name})
 		Expect(err).NotTo(HaveOccurred())
 		Expect(drainEvents(recorder)).To(ContainElement(ContainSubstring("WorkerPodDeleted")))
+
+		By("failing the remaining worker, which is replaced and left in place")
+		workerLabels := client.MatchingLabels{clusterLabel: name.Name, componentLabel: componentWorker}
+		var workers corev1.PodList
+		Expect(k8sClient.List(ctx, &workers, client.InNamespace(name.Namespace), workerLabels)).To(Succeed())
+		Expect(workers.Items).To(HaveLen(1))
+		failed := workers.Items[0]
+		failed.Status.Phase = corev1.PodFailed
+		Expect(k8sClient.Status().Update(ctx, &failed)).To(Succeed())
+
+		_, err = reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: name})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(drainEvents(recorder)).To(ContainElement(ContainSubstring("WorkerPodCreated")))
+		Expect(k8sClient.List(ctx, &workers, client.InNamespace(name.Namespace), workerLabels)).To(Succeed())
+		Expect(workers.Items).To(HaveLen(2))
+		Expect(k8sClient.Get(ctx, name, cluster)).To(Succeed())
+		Expect(cluster.Status.WorkerPool.Replicas).To(Equal(int32(1)))
+
+		By("failing the scheduler pod, which is deleted and then recreated")
+		var schedulerPod corev1.Pod
+		schedulerKey := types.NamespacedName{Name: name.Name + "-scheduler", Namespace: name.Namespace}
+		Expect(k8sClient.Get(ctx, schedulerKey, &schedulerPod)).To(Succeed())
+		schedulerPod.Status.Phase = corev1.PodFailed
+		Expect(k8sClient.Status().Update(ctx, &schedulerPod)).To(Succeed())
+
+		_, err = reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: name})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(drainEvents(recorder)).To(ContainElement(ContainSubstring("Deleted stopped scheduler pod")))
+		_, err = reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: name})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(drainEvents(recorder)).To(ContainElement(ContainSubstring("SchedulerPodCreated")))
+
+		By("rejecting a restartPolicy other than Always")
+		Expect(k8sClient.Get(ctx, name, cluster)).To(Succeed())
+		cluster.Spec.Scheduler.PodTemplate.Spec.RestartPolicy = corev1.RestartPolicyNever
+		cluster.Spec.WorkerPool.PodTemplate.Spec.RestartPolicy = corev1.RestartPolicyNever
+		Expect(k8sClient.Update(ctx, cluster)).To(MatchError(And(
+			ContainSubstring("spec.scheduler.podTemplate"),
+			ContainSubstring("spec.workerPool.podTemplate"),
+			ContainSubstring("spec.restartPolicy must be Always"),
+		)))
 	})
 })
 

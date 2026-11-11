@@ -464,7 +464,9 @@ type SchedulerSpec struct {
 	Services *SchedulerServicesSpec `json:"services,omitempty"`
 
 	// PodTemplate customizes the scheduler pod; it is merged into the pod
-	// the operator composes.
+	// the operator composes. Like a StatefulSet's, its restartPolicy must be
+	// Always: a scheduler pod that fails is deleted and created again.
+	// +kubebuilder:validation:XValidation:rule="!has(self.spec) || !has(self.spec.restartPolicy) || self.spec.restartPolicy == 'Always'",message="spec.restartPolicy must be Always"
 	// +optional
 	PodTemplate *v1.PodTemplateSpec `json:"podTemplate,omitempty"`
 
@@ -585,7 +587,10 @@ type ServiceConfig struct {
 // +kubebuilder:validation:XValidation:rule="!has(self.minReplicas) || !has(self.maxReplicas) || self.minReplicas <= self.maxReplicas",message="minReplicas must not exceed maxReplicas"
 type WorkerPoolDeclaration struct {
 	// PodTemplate customizes the worker pods; it is merged into the pod
-	// the operator composes.
+	// the operator composes. Like a ReplicaSet's, its restartPolicy must be
+	// Always: a worker pod that fails is replaced by a new one, and the
+	// failed pod is left in place for inspection.
+	// +kubebuilder:validation:XValidation:rule="!has(self.spec) || !has(self.spec.restartPolicy) || self.spec.restartPolicy == 'Always'",message="spec.restartPolicy must be Always"
 	// +optional
 	PodTemplate *v1.PodTemplateSpec `json:"podTemplate,omitempty"`
 
@@ -835,7 +840,8 @@ type SchedulerStatus struct {
 
 // WorkerPoolStatus is the observed state of a PolarsCluster's worker pool.
 type WorkerPoolStatus struct {
-	// Replicas is the number of non-terminating worker pods.
+	// Replicas is the number of worker pods that are neither terminating nor
+	// stopped (Failed or Succeeded).
 	// +optional
 	Replicas int32 `json:"replicas,omitempty"`
 
