@@ -6,8 +6,8 @@ import (
 
 	rbacv1 "k8s.io/api/rbac/v1"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	rbacv1ac "k8s.io/client-go/applyconfigurations/rbac/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
 	computev1 "github.com/polars-inc/polars-k8s-operator/api/v1"
 )
@@ -43,26 +43,26 @@ func (r *PolarsClusterReconciler) reconcileScalingRBAC(ctx context.Context, clus
 		return nil
 	}
 
-	if _, err := controllerutil.CreateOrUpdate(ctx, r.Client, role, func() error {
-		role.Labels = standardLabels(cluster, componentScheduler)
-		role.Rules = []rbacv1.PolicyRule{{
-			APIGroups:     []string{computev1.GroupVersion.Group},
-			Resources:     []string{"polarsclusters"},
-			ResourceNames: []string{cluster.Name},
-			Verbs:         []string{"get", "list", "watch", "patch"},
-		}}
-		return controllerutil.SetControllerReference(cluster, role, r.Scheme)
-	}); err != nil {
-		return classifyAPIError("ScalingRBACRejected", err)
+	labels := standardLabels(cluster, componentScheduler)
+	if err := r.applyOwned(ctx, cluster, role, rbacv1ac.Role(meta.Name, meta.Namespace).
+		WithLabels(labels).
+		WithOwnerReferences(controllerRef(cluster)).
+		WithRules(rbacv1ac.PolicyRule().
+			WithAPIGroups(computev1.GroupVersion.Group).
+			WithResources("polarsclusters").
+			WithResourceNames(cluster.Name).
+			WithVerbs("get", "list", "watch", "patch")),
+		"ScalingRBAC"); err != nil {
+		return err
 	}
 
-	if _, err := controllerutil.CreateOrUpdate(ctx, r.Client, binding, func() error {
-		binding.Labels = standardLabels(cluster, componentScheduler)
-		binding.RoleRef = rbacv1.RoleRef{APIGroup: rbacv1.GroupName, Kind: "Role", Name: role.Name}
-		binding.Subjects = []rbacv1.Subject{{Kind: rbacv1.ServiceAccountKind, Name: schedulerServiceAccount(cluster), Namespace: cluster.Namespace}}
-		return controllerutil.SetControllerReference(cluster, binding, r.Scheme)
-	}); err != nil {
-		return classifyAPIError("ScalingRBACRejected", err)
-	}
-	return nil
+	return r.applyOwned(ctx, cluster, binding, rbacv1ac.RoleBinding(meta.Name, meta.Namespace).
+		WithLabels(labels).
+		WithOwnerReferences(controllerRef(cluster)).
+		WithRoleRef(rbacv1ac.RoleRef().WithAPIGroup(rbacv1.GroupName).WithKind("Role").WithName(meta.Name)).
+		WithSubjects(rbacv1ac.Subject().
+			WithKind(rbacv1.ServiceAccountKind).
+			WithName(schedulerServiceAccount(cluster)).
+			WithNamespace(cluster.Namespace)),
+		"ScalingRBAC")
 }

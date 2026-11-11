@@ -4,18 +4,17 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"maps"
 	"slices"
-	"time"
 
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
-	"k8s.io/utils/ptr"
+	metav1ac "k8s.io/client-go/applyconfigurations/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	gatewayv1 "sigs.k8s.io/gateway-api/apis/v1"
+	gwac "sigs.k8s.io/gateway-api/applyconfiguration/apis/v1"
 
 	computev1 "github.com/polars-inc/polars-k8s-operator/api/v1"
 )
@@ -23,11 +22,6 @@ import (
 const (
 	conditionRoutesReady = "RoutesReady"
 	reasonNotAccepted    = "NotAccepted"
-	reasonRouteConflict  = "RouteConflict"
-
-	// routeRetryInterval is how often a conflicting or Forbidden route is
-	// retried, as neither clearing triggers a reconcile.
-	routeRetryInterval = time.Minute
 )
 
 func GatewayAPIInstalled(mapper meta.RESTMapper) (bool, error) {
@@ -44,14 +38,19 @@ func GatewayAPIInstalled(mapper meta.RESTMapper) (bool, error) {
 }
 
 type routeTarget struct {
-	route     client.Object
-	kind      string
-	common    *gatewayv1.CommonRouteSpec
-	hostnames *[]gatewayv1.Hostname
-	status    *gatewayv1.RouteStatus
-	setRules  func(gatewayv1.BackendRef)
-	port      gatewayv1.PortNumber
-	spec      *computev1.RouteSpec
+	route  client.Object
+	kind   string
+	status *gatewayv1.RouteStatus
+	build  func(routeParts) runtime.ApplyConfiguration
+	port   gatewayv1.PortNumber
+	spec   *computev1.RouteSpec
+}
+
+type routeParts struct {
+	meta      *metav1ac.ObjectMetaApplyConfiguration
+	common    gwac.CommonRouteSpecApplyConfiguration
+	hostnames []gatewayv1.Hostname
+	backend   gwac.BackendRefApplyConfiguration
 }
 
 func routeTargets(cluster *computev1.PolarsCluster) []routeTarget {
@@ -62,31 +61,37 @@ func routeTargets(cluster *computev1.PolarsCluster) []routeTarget {
 
 	return []routeTarget{
 		{
-			route:     grpc,
-			kind:      "GRPCRoute",
-			common:    &grpc.Spec.CommonRouteSpec,
-			hostnames: &grpc.Spec.Hostnames,
-			status:    &grpc.Status.RouteStatus,
-			setRules: func(backend gatewayv1.BackendRef) {
-				grpc.Spec.Rules = []gatewayv1.GRPCRouteRule{{BackendRefs: []gatewayv1.GRPCBackendRef{{BackendRef: backend}}}}
+			route:  grpc,
+			kind:   "GRPCRoute",
+			status: &grpc.Status.RouteStatus,
+			build: func(p routeParts) runtime.ApplyConfiguration {
+				route := gwac.GRPCRoute(grpc.Name, grpc.Namespace).WithSpec(&gwac.GRPCRouteSpecApplyConfiguration{
+					CommonRouteSpecApplyConfiguration: p.common,
+					Hostnames:                         p.hostnames,
+					Rules: []gwac.GRPCRouteRuleApplyConfiguration{{
+						BackendRefs: []gwac.GRPCBackendRefApplyConfiguration{{BackendRefApplyConfiguration: p.backend}},
+					}},
+				})
+				route.ObjectMetaApplyConfiguration = p.meta
+				return route
 			},
 			port: schedulerPort,
 			spec: routeSpec(services.Scheduler),
 		},
 		{
-			route:     http,
-			kind:      "HTTPRoute",
-			common:    &http.Spec.CommonRouteSpec,
-			hostnames: &http.Spec.Hostnames,
-			status:    &http.Status.RouteStatus,
-			setRules: func(backend gatewayv1.BackendRef) {
-				http.Spec.Rules = []gatewayv1.HTTPRouteRule{{
-					Matches: []gatewayv1.HTTPRouteMatch{{Path: &gatewayv1.HTTPPathMatch{
-						Type:  ptr.To(gatewayv1.PathMatchPathPrefix),
-						Value: ptr.To("/"),
-					}}},
-					BackendRefs: []gatewayv1.HTTPBackendRef{{BackendRef: backend}},
-				}}
+			route:  http,
+			kind:   "HTTPRoute",
+			status: &http.Status.RouteStatus,
+			build: func(p routeParts) runtime.ApplyConfiguration {
+				route := gwac.HTTPRoute(http.Name, http.Namespace).WithSpec(&gwac.HTTPRouteSpecApplyConfiguration{
+					CommonRouteSpecApplyConfiguration: p.common,
+					Hostnames:                         p.hostnames,
+					Rules: []gwac.HTTPRouteRuleApplyConfiguration{{
+						BackendRefs: []gwac.HTTPBackendRefApplyConfiguration{{BackendRefApplyConfiguration: p.backend}},
+					}},
+				})
+				route.ObjectMetaApplyConfiguration = p.meta
+				return route
 			},
 			port: observatoryRESTPort,
 			spec: routeSpec(services.Observatory),
@@ -144,49 +149,44 @@ func (r *PolarsClusterReconciler) reconcileRoutes(ctx context.Context, cluster *
 			if !errors.As(err, &se) {
 				return routesStatus{}, err
 			}
-			status.notReady(se.reason, routeMessage(target, se.Error()))
-			status.retry = status.retry || se.reason == reasonRouteConflict || apierrors.IsForbidden(se)
+			status.notReady(se.reason, se.Error())
+			status.retry = status.retry || errors.Is(se, errConflict) || apierrors.IsForbidden(se)
 			continue
 		}
 		if !routeAccepted(target) {
-			status.notReady(reasonNotAccepted, routeMessage(target, "no parent has accepted it yet"))
+			status.notReady(reasonNotAccepted, fmt.Sprintf("%s %s: no parent has accepted it yet", target.kind, target.route.GetName()))
 		}
 	}
 	return status, nil
 }
 
-// applyRoute spells out the fields the Gateway API CRDs default, so an
-// unchanged route isn't rewritten on every reconcile.
 func (r *PolarsClusterReconciler) applyRoute(ctx context.Context, cluster *computev1.PolarsCluster, target routeTarget) error {
-	route := target.route
-	_, err := controllerutil.CreateOrUpdate(ctx, r.Client, route, func() error {
-		labels := map[string]string{}
-		maps.Copy(labels, target.spec.Labels)
-		maps.Copy(labels, schedulerObjectLabels(cluster))
-		route.SetLabels(labels)
-		route.SetAnnotations(target.spec.Annotations)
-
-		target.common.ParentRefs = target.spec.ParentRefs
-		*target.hostnames = target.spec.Hostnames
-		target.setRules(gatewayv1.BackendRef{
-			BackendObjectReference: gatewayv1.BackendObjectReference{
-				Group: ptr.To(gatewayv1.Group("")),
-				Kind:  ptr.To(gatewayv1.Kind("Service")),
-				Name:  gatewayv1.ObjectName(route.GetName()),
-				Port:  &target.port,
-			},
-			Weight: ptr.To[int32](1),
-		})
-		return controllerutil.SetControllerReference(cluster, route, r.Scheme)
-	})
-	if alreadyOwned := (*controllerutil.AlreadyOwnedError)(nil); errors.As(err, &alreadyOwned) {
-		return &specError{reason: reasonRouteConflict, err: err}
+	// Converted generically, so fields gateway-api adds to ParentReference
+	// carry over.
+	parentRefs, err := runtime.DefaultUnstructuredConverter.ToUnstructured(&gatewayv1.CommonRouteSpec{ParentRefs: target.spec.ParentRefs})
+	if err != nil {
+		return err
 	}
-	return classifyAPIError("RouteRejected", err)
-}
+	var common gwac.CommonRouteSpecApplyConfiguration
+	if err := runtime.DefaultUnstructuredConverter.FromUnstructured(parentRefs, &common); err != nil {
+		return err
+	}
 
-func routeMessage(target routeTarget, detail string) string {
-	return fmt.Sprintf("%s %s: %s", target.kind, target.route.GetName(), detail)
+	route := target.route
+	return r.applyOwned(ctx, cluster, route, target.build(routeParts{
+		meta: metav1ac.ObjectMeta().
+			WithName(route.GetName()).
+			WithNamespace(route.GetNamespace()).
+			WithLabels(target.spec.Labels).
+			WithLabels(schedulerObjectLabels(cluster)).
+			WithAnnotations(target.spec.Annotations).
+			WithOwnerReferences(controllerRef(cluster)),
+		common:    common,
+		hostnames: target.spec.Hostnames,
+		backend: *gwac.BackendRef().
+			WithName(gatewayv1.ObjectName(route.GetName())).
+			WithPort(target.port),
+	}), "Route")
 }
 
 // deleteOwned deletes obj if it exists and cluster controls it.
