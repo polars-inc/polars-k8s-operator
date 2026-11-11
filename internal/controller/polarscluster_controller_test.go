@@ -3,6 +3,7 @@ package controller
 import (
 	"context"
 	"strings"
+	"testing"
 
 	corev1 "k8s.io/api/core/v1"
 
@@ -480,9 +481,19 @@ var _ = Describe("PolarsCluster spec-error handling", func() {
 		Expect(k8sClient.Get(ctx, types.NamespacedName{Name: name.Name + "-scheduler", Namespace: name.Namespace}, &schedulerPod)).To(Succeed())
 		schedulerPod.Status.Conditions = []corev1.PodCondition{{
 			Type: corev1.PodReady, Status: corev1.ConditionFalse,
-			Message: "containers with unready status: [scheduler]",
+			Reason: "ContainersNotReady", Message: "containers with unready status: [scheduler]",
+		}}
+		schedulerPod.Status.ContainerStatuses = []corev1.ContainerStatus{{
+			Name: componentScheduler, Image: testStandInImage,
+			State: corev1.ContainerState{Waiting: &corev1.ContainerStateWaiting{
+				Reason: "CrashLoopBackOff", Message: "back-off 10s restarting failed container=scheduler",
+			}},
+			LastTerminationState: corev1.ContainerState{Terminated: &corev1.ContainerStateTerminated{
+				Reason: "OOMKilled", ExitCode: 137,
+			}},
 		}}
 		Expect(k8sClient.Status().Update(ctx, &schedulerPod)).To(Succeed())
+		const crashLoopMessage = "container scheduler is waiting: CrashLoopBackOff: back-off 10s restarting failed container=scheduler; last terminated: OOMKilled (exit code 137)"
 
 		By("reconciling the Ready to not-Ready transition")
 		_, err = reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: name})
@@ -494,13 +505,13 @@ var _ = Describe("PolarsCluster spec-error handling", func() {
 			Expect(cond).NotTo(BeNil(), "expected condition %s", condType)
 			Expect(cond.Status).To(Equal(metav1.ConditionFalse))
 			Expect(cond.Reason).To(Equal("NotReady"))
-			Expect(cond.Message).To(Equal("containers with unready status: [scheduler]"))
+			Expect(cond.Message).To(Equal(crashLoopMessage))
 		}
 
 		var event string
 		Eventually(recorder.Events).Should(Receive(&event))
 		Expect(event).To(ContainSubstring("NotReady"))
-		Expect(event).To(ContainSubstring("containers with unready status: [scheduler]"))
+		Expect(event).To(ContainSubstring(crashLoopMessage))
 	})
 })
 
@@ -685,3 +696,70 @@ var _ = Describe("PolarsCluster ServiceAccount reconciliation", func() {
 		}
 	})
 })
+
+func TestPodNotReadyMessage(t *testing.T) {
+	containersNotReady := corev1.PodCondition{
+		Type: corev1.PodReady, Status: corev1.ConditionFalse,
+		Reason: "ContainersNotReady", Message: "containers with unready status: [polars]",
+	}
+	waiting := func(name, reason, message string) corev1.ContainerStatus {
+		return corev1.ContainerStatus{Name: name, State: corev1.ContainerState{
+			Waiting: &corev1.ContainerStateWaiting{Reason: reason, Message: message},
+		}}
+	}
+	terminated := func(name, reason string, exitCode int32) corev1.ContainerStatus {
+		return corev1.ContainerStatus{Name: name, State: corev1.ContainerState{
+			Terminated: &corev1.ContainerStateTerminated{Reason: reason, ExitCode: exitCode},
+		}}
+	}
+
+	tests := map[string]struct {
+		status corev1.PodStatus
+		want   string
+	}{
+		"unschedulable": {
+			status: corev1.PodStatus{Conditions: []corev1.PodCondition{{
+				Type: corev1.PodScheduled, Status: corev1.ConditionFalse, Reason: "Unschedulable",
+				Message: "0/3 nodes are available: 3 node(s) didn't match Pod's node affinity/selector.",
+			}}},
+			want: "Unschedulable: 0/3 nodes are available: 3 node(s) didn't match Pod's node affinity/selector.",
+		},
+		"evicted": {
+			status: corev1.PodStatus{Phase: corev1.PodFailed, Reason: "Evicted", Message: "The node was low on resource: memory."},
+			want:   "Evicted: The node was low on resource: memory.",
+		},
+		"image pull past a completed init container outranks PodReady": {
+			status: corev1.PodStatus{
+				Conditions: []corev1.PodCondition{containersNotReady},
+				InitContainerStatuses: []corev1.ContainerStatus{
+					terminated("release", "Completed", 0),
+					waiting("requirements", "ImagePullBackOff", `Back-off pulling image "python:9.9"`),
+				},
+				ContainerStatuses: []corev1.ContainerStatus{waiting("polars", "PodInitializing", "")},
+			},
+			want: `init container requirements is waiting: ImagePullBackOff: Back-off pulling image "python:9.9"`,
+		},
+		"exited app container": {
+			status: corev1.PodStatus{
+				Conditions:        []corev1.PodCondition{containersNotReady},
+				ContainerStatuses: []corev1.ContainerStatus{terminated("polars", "Completed", 0)},
+			},
+			want: "container polars terminated: Completed (exit code 0)",
+		},
+		"running but failing readiness falls back to PodReady": {
+			status: corev1.PodStatus{
+				Conditions:        []corev1.PodCondition{containersNotReady},
+				ContainerStatuses: []corev1.ContainerStatus{{Name: "polars", State: corev1.ContainerState{Running: &corev1.ContainerStateRunning{}}}},
+			},
+			want: "ContainersNotReady: containers with unready status: [polars]",
+		},
+	}
+
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			if got := podNotReadyMessage(&corev1.Pod{Status: tt.status}); got != tt.want {
+				t.Fatalf("podNotReadyMessage() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
