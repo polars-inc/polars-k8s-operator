@@ -2,6 +2,7 @@ package controller
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"testing"
 
@@ -14,6 +15,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/tools/events"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -426,6 +428,46 @@ var _ = Describe("PolarsCluster spec-error handling", func() {
 		By("verifying the scheduler pod was composed since it reconciles before Services")
 		var schedulerPod corev1.Pod
 		Expect(k8sClient.Get(ctx, types.NamespacedName{Name: longName + "-scheduler", Namespace: validationNamespace}, &schedulerPod)).To(Succeed())
+	})
+
+	It("should record and requeue a pod create that admission rejects as Forbidden", func() {
+		ctx := context.Background()
+		name := types.NamespacedName{Name: "forbidden-retry", Namespace: validationNamespace}
+		cluster := &computev1.PolarsCluster{
+			ObjectMeta: metav1.ObjectMeta{Name: name.Name, Namespace: name.Namespace},
+			Spec: computev1.PolarsClusterSpec{
+				License: licenseSpec,
+				Scheduler: &computev1.SchedulerSpec{
+					PodTemplate: &corev1.PodTemplateSpec{
+						Spec: corev1.PodSpec{Containers: []corev1.Container{{Name: componentScheduler, Image: testStandInImage}}},
+					},
+				},
+			},
+		}
+		Expect(k8sClient.Create(ctx, cluster)).To(Succeed())
+		defer func() { _ = k8sClient.Delete(ctx, cluster) }()
+
+		// envtest disables the ServiceAccount admission plugin, so fake its
+		// rejection of a pod naming a ServiceAccount that doesn't exist yet.
+		watchingClient, err := client.NewWithWatch(cfg, client.Options{Scheme: k8sClient.Scheme()})
+		Expect(err).NotTo(HaveOccurred())
+		rejectPods := interceptor.NewClient(watchingClient, interceptor.Funcs{
+			Create: func(ctx context.Context, c client.WithWatch, obj client.Object, opts ...client.CreateOption) error {
+				if _, ok := obj.(*corev1.Pod); ok {
+					return apierrors.NewForbidden(corev1.Resource("pods"), "", errors.New(`error looking up service account default/ext-sa: serviceaccount "ext-sa" not found`))
+				}
+				return c.Create(ctx, obj, opts...)
+			},
+		})
+
+		reconciler := &PolarsClusterReconciler{Client: rejectPods, Scheme: k8sClient.Scheme(), Recorder: events.NewFakeRecorder(10)}
+		_, err = reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: name})
+		Expect(apierrors.IsForbidden(err)).To(BeTrue(), "expected the Forbidden error to be returned for a requeue, got %v", err)
+
+		Expect(k8sClient.Get(ctx, name, cluster)).To(Succeed())
+		cond := meta.FindStatusCondition(cluster.Status.Conditions, conditionSchedulerReady)
+		Expect(cond).NotTo(BeNil())
+		Expect(cond.Reason).To(Equal("SchedulerPodRejected"))
 	})
 
 	It("should emit a Normal event on the not-Ready to Ready transition, and a Warning event with a diagnostic message on the reverse", func() {

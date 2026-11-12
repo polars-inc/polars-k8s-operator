@@ -52,10 +52,10 @@ const (
 	// Keep stable: the API server won't remove fields applied under an old name.
 	fieldOwner = client.FieldOwner("polars-operator")
 
-	// conflictRetryInterval is how often a cluster checks again whether an
-	// object name taken by something it doesn't control has freed up: that
-	// object going away doesn't trigger a reconcile.
-	conflictRetryInterval = time.Minute
+	// retryInterval is how often a cluster retries an object whose name is
+	// taken by something it doesn't control, or a route rejected as
+	// Forbidden: neither clearing triggers a reconcile.
+	retryInterval = time.Minute
 
 	maxConcurrentPodCreations = 4
 
@@ -193,18 +193,18 @@ func (r *PolarsClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		r.Recorder.Eventf(cluster, nil, corev1.EventTypeWarning, "NotReady", actionReconcile, "%s", readyMessage)
 	}
 
-	if routes.conflict {
-		return ctrl.Result{RequeueAfter: conflictRetryInterval}, nil
+	if routes.retry {
+		return ctrl.Result{RequeueAfter: retryInterval}, nil
 	}
 	return ctrl.Result{}, nil
 }
 
 // recordSpecError surfaces a spec-caused error as a False condition of
 // condType (mirrored onto conditionReady when condType differs) plus a
-// Warning Event, and returns nil so the caller doesn't trigger the default
-// requeue-with-backoff: only a spec change (or the underlying rejection
-// clearing) can fix it, and that already re-triggers reconciliation. A
-// conflict is the exception, retried every conflictRetryInterval.
+// Warning Event. It's only requeued when its cause lies outside the spec,
+// where fixing it triggers no reconcile: a conflict is retried every
+// retryInterval, and Forbidden (a missing ServiceAccount, a quota) is
+// returned for requeue-with-backoff.
 func (r *PolarsClusterReconciler) recordSpecError(ctx context.Context, cluster *computev1.PolarsCluster, condType string, se *specError) (ctrl.Result, error) {
 	meta.SetStatusCondition(&cluster.Status.Conditions, v1.Condition{
 		Type:               condType,
@@ -229,7 +229,10 @@ func (r *PolarsClusterReconciler) recordSpecError(ctx context.Context, cluster *
 		return ctrl.Result{}, err
 	}
 	if errors.Is(se, errConflict) {
-		return ctrl.Result{RequeueAfter: conflictRetryInterval}, nil
+		return ctrl.Result{RequeueAfter: retryInterval}, nil
+	}
+	if apierrors.IsForbidden(se) {
+		return ctrl.Result{}, se
 	}
 	return ctrl.Result{}, nil
 }

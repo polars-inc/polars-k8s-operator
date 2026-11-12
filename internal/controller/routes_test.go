@@ -2,6 +2,7 @@ package controller
 
 import (
 	"context"
+	"errors"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -9,14 +10,17 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/events"
 	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/apiutil"
+	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 	gatewayv1 "sigs.k8s.io/gateway-api/apis/v1"
+	gwac "sigs.k8s.io/gateway-api/applyconfiguration/apis/v1"
 
 	computev1 "github.com/polars-inc/polars-k8s-operator/api/v1"
 )
@@ -267,7 +271,7 @@ var _ = Describe("PolarsCluster Gateway API routes", func() {
 		defer func() { _ = k8sClient.Delete(ctx, foreign) }()
 
 		result := reconcileCluster(ctx, cluster, true)
-		Expect(result.RequeueAfter).To(Equal(conflictRetryInterval))
+		Expect(result.RequeueAfter).To(Equal(retryInterval))
 
 		cond := expectRoutesReady(cluster, metav1.ConditionFalse, "RouteConflict")
 		Expect(cond.Message).To(Equal("HTTPRoute routes-conflict-observatory is already controlled by another object: ConfigMap other"))
@@ -276,6 +280,31 @@ var _ = Describe("PolarsCluster Gateway API routes", func() {
 			To(Succeed())
 		Expect(k8sClient.Get(ctx, types.NamespacedName{Name: "routes-conflict-scheduler", Namespace: validationNamespace}, &gatewayv1.GRPCRoute{})).
 			To(Succeed())
+	})
+
+	It("should report a Forbidden route as RouteRejected and retry", func() {
+		ctx := context.Background()
+		cluster := routedCluster("routes-forbidden")
+		Expect(k8sClient.Create(ctx, cluster)).To(Succeed())
+		defer func() { _ = k8sClient.Delete(ctx, cluster) }()
+
+		watchClient, err := client.NewWithWatch(cfg, client.Options{Scheme: k8sClient.Scheme()})
+		Expect(err).NotTo(HaveOccurred())
+		rejectRoutes := interceptor.NewClient(watchClient, interceptor.Funcs{
+			Apply: func(ctx context.Context, c client.WithWatch, obj runtime.ApplyConfiguration, opts ...client.ApplyOption) error {
+				if _, ok := obj.(*gwac.HTTPRouteApplyConfiguration); ok {
+					return apierrors.NewForbidden(gatewayv1.Resource("httproutes"), "routes-forbidden-observatory", errors.New("denied by policy"))
+				}
+				return c.Apply(ctx, obj, opts...)
+			},
+		})
+
+		reconciler := &PolarsClusterReconciler{Client: rejectRoutes, Scheme: k8sClient.Scheme(), Recorder: events.NewFakeRecorder(10), GatewayAPIEnabled: true}
+		result, err := reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: client.ObjectKeyFromObject(cluster)})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(result.RequeueAfter).To(Equal(retryInterval))
+		Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(cluster), cluster)).To(Succeed())
+		expectRoutesReady(cluster, metav1.ConditionFalse, "RouteRejected")
 	})
 
 	It("should report a Service owned by another controller as a ServiceConflict and retry", func() {
@@ -296,7 +325,7 @@ var _ = Describe("PolarsCluster Gateway API routes", func() {
 		defer func() { _ = k8sClient.Delete(ctx, foreign) }()
 
 		result := reconcileCluster(ctx, cluster, true)
-		Expect(result.RequeueAfter).To(Equal(conflictRetryInterval))
+		Expect(result.RequeueAfter).To(Equal(retryInterval))
 
 		cond := meta.FindStatusCondition(cluster.Status.Conditions, conditionReady)
 		Expect(cond).NotTo(BeNil())

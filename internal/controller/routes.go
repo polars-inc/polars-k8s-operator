@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"slices"
 
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -111,7 +112,7 @@ type routesStatus struct {
 	reason    string
 	message   string
 	// Tracked apart from reason, which keeps only the first failure.
-	conflict bool
+	retry bool
 }
 
 func (s *routesStatus) notReady(reason, message string) {
@@ -149,7 +150,7 @@ func (r *PolarsClusterReconciler) reconcileRoutes(ctx context.Context, cluster *
 				return routesStatus{}, err
 			}
 			status.notReady(se.reason, se.Error())
-			status.conflict = status.conflict || errors.Is(se, errConflict)
+			status.retry = status.retry || errors.Is(se, errConflict) || apierrors.IsForbidden(se)
 			continue
 		}
 		if !routeAccepted(target) {
