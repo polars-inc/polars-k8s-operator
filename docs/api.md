@@ -518,7 +518,7 @@ _Appears in:_
 | `memoryBudgetFraction` _float_ | MemoryBudgetFraction starts spilling when memory use exceeds this<br />fraction of the container memory limit, or of the node memory without<br />a limit. Polars defaults to 0.8. Sets POLARS_OOC_MEMORY_BUDGET_FRACTION. |  | Minimum: 0 <br />Optional: \{\} <br /> |
 | `memoryBudgetMB` _integer_ | MemoryBudgetMB starts spilling when memory use exceeds this many MB.<br />When both budgets are set, the lower one applies. No fixed cap when<br />unset. Sets POLARS_OOC_MEMORY_BUDGET_MB. |  | Minimum: 1 <br />Optional: \{\} <br /> |
 | `diskBudgetMB` _integer_ | DiskBudgetMB aborts a query when its spill files exceed this many MB.<br />Polars defaults to 64000. Sets POLARS_OOC_DISK_BUDGET_MB. |  | Minimum: 1 <br />Optional: \{\} <br /> |
-| `oomKillThresholdMB` _integer_ | OOMKillThresholdMB aborts a task when its memory use exceeds this many<br />MB, so the worker reports an out-of-memory error instead of the kernel<br />killing the whole pod. Defaults to about 95% of the container memory<br />limit, or of the node allocatable memory without a limit. Sets<br />POLARS_OOMKILL_THRESHOLD_MB. |  | Minimum: 1 <br />Optional: \{\} <br /> |
+| `oomKillThresholdMB` _integer_ | OOMKillThresholdMB aborts a task when its memory use exceeds this many<br />MB, so the worker reports an out-of-memory error instead of the kernel<br />killing the whole pod. Defaults to about 95% of the container memory<br />limit, or of the node allocatable memory without a limit. Requires<br />Polars on-premises 0.9.0 or later. Sets POLARS_OOMKILL_THRESHOLD_MB. |  | Minimum: 1 <br />Optional: \{\} <br /> |
 
 
 #### PersistentVolumeClaimRef

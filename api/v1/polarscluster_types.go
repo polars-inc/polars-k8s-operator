@@ -684,8 +684,8 @@ type OutOfCoreSpec struct {
 	// OOMKillThresholdMB aborts a task when its memory use exceeds this many
 	// MB, so the worker reports an out-of-memory error instead of the kernel
 	// killing the whole pod. Defaults to about 95% of the container memory
-	// limit, or of the node allocatable memory without a limit. Sets
-	// POLARS_OOMKILL_THRESHOLD_MB.
+	// limit, or of the node allocatable memory without a limit. Requires
+	// Polars on-premises 0.9.0 or later. Sets POLARS_OOMKILL_THRESHOLD_MB.
 	// +kubebuilder:validation:Minimum=1
 	// +optional
 	OOMKillThresholdMB *int64 `json:"oomKillThresholdMB,omitempty"`

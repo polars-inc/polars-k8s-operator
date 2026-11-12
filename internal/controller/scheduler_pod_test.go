@@ -342,6 +342,28 @@ func TestClusterVersion_CloudLicenseMinimum(t *testing.T) {
 	g.Expect(err).NotTo(HaveOccurred(), "the floor only applies to the cloud license")
 }
 
+func TestClusterVersion_OOMKillThresholdMinimum(t *testing.T) {
+	g := NewWithT(t)
+
+	cluster := schedulerCluster(corev1.Container{})
+	cluster.Spec.WorkerPool.OutOfCore = &computev1.OutOfCoreSpec{OOMKillThresholdMB: ptr.To[int64](30000)}
+
+	cluster.Spec.Version = "0.8.7"
+	_, err := clusterVersion(cluster)
+	g.Expect(err).To(HaveOccurred())
+	g.Expect(err.Error()).To(ContainSubstring("does not support workerPool.outOfCore.oomKillThresholdMB"))
+	g.Expect(err.Error()).To(ContainSubstring("requires at least 0.9.0"))
+
+	cluster.Spec.Version = "0.9.0"
+	_, err = clusterVersion(cluster)
+	g.Expect(err).NotTo(HaveOccurred())
+
+	cluster.Spec.WorkerPool.OutOfCore = &computev1.OutOfCoreSpec{DiskBudgetMB: ptr.To[int64](100000)}
+	cluster.Spec.Version = "0.8.7"
+	_, err = clusterVersion(cluster)
+	g.Expect(err).NotTo(HaveOccurred(), "the other settings work on every supported release")
+}
+
 func TestBuildSchedulerPodTemplate_ComposedRuntimeVersionFallback(t *testing.T) {
 	g := NewWithT(t)
 
