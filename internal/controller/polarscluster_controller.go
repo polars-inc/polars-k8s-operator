@@ -9,6 +9,7 @@ import (
 	"hash/fnv"
 	"slices"
 	"strings"
+	"time"
 
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
@@ -16,11 +17,14 @@ import (
 	"k8s.io/apimachinery/pkg/api/meta"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	corev1ac "k8s.io/client-go/applyconfigurations/core/v1"
+	metav1ac "k8s.io/client-go/applyconfigurations/meta/v1"
 	"k8s.io/client-go/tools/events"
 	"k8s.io/client-go/util/workqueue"
 	"k8s.io/utils/ptr"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/client/apiutil"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	gatewayv1 "sigs.k8s.io/gateway-api/apis/v1"
@@ -44,6 +48,14 @@ const (
 	actionReconcile = "Reconcile"
 	actionCreatePod = "CreatePod"
 	actionDeletePod = "DeletePod"
+
+	// Keep stable: the API server won't remove fields applied under an old name.
+	fieldOwner = client.FieldOwner("polars-operator")
+
+	// conflictRetryInterval is how often a cluster checks again whether an
+	// object name taken by something it doesn't control has freed up: that
+	// object going away doesn't trigger a reconcile.
+	conflictRetryInterval = time.Minute
 
 	maxConcurrentPodCreations = 4
 
@@ -182,7 +194,7 @@ func (r *PolarsClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 	}
 
 	if routes.conflict {
-		return ctrl.Result{RequeueAfter: routeConflictRetryInterval}, nil
+		return ctrl.Result{RequeueAfter: conflictRetryInterval}, nil
 	}
 	return ctrl.Result{}, nil
 }
@@ -191,7 +203,8 @@ func (r *PolarsClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 // condType (mirrored onto conditionReady when condType differs) plus a
 // Warning Event, and returns nil so the caller doesn't trigger the default
 // requeue-with-backoff: only a spec change (or the underlying rejection
-// clearing) can fix it, and that already re-triggers reconciliation.
+// clearing) can fix it, and that already re-triggers reconciliation. A
+// conflict is the exception, retried every conflictRetryInterval.
 func (r *PolarsClusterReconciler) recordSpecError(ctx context.Context, cluster *computev1.PolarsCluster, condType string, se *specError) (ctrl.Result, error) {
 	meta.SetStatusCondition(&cluster.Status.Conditions, v1.Condition{
 		Type:               condType,
@@ -214,6 +227,9 @@ func (r *PolarsClusterReconciler) recordSpecError(ctx context.Context, cluster *
 	cluster.Status.ObservedGeneration = cluster.Generation
 	if err := r.Status().Update(ctx, cluster); err != nil {
 		return ctrl.Result{}, err
+	}
+	if errors.Is(se, errConflict) {
+		return ctrl.Result{RequeueAfter: conflictRetryInterval}, nil
 	}
 	return ctrl.Result{}, nil
 }
@@ -456,28 +472,28 @@ func (r *PolarsClusterReconciler) reconcileServices(ctx context.Context, cluster
 	desired := []struct {
 		name   string
 		config *computev1.ServiceConfig
-		ports  []corev1.ServicePort
+		ports  []*corev1ac.ServicePortApplyConfiguration
 	}{
 		{
 			name:   schedulerServiceName(cluster),
 			config: serviceConfig(services.Scheduler),
-			ports: []corev1.ServicePort{
-				{Name: "sched", Port: schedulerPort, Protocol: corev1.ProtocolTCP, AppProtocol: ptr.To("kubernetes.io/h2c")},
+			ports: []*corev1ac.ServicePortApplyConfiguration{
+				servicePort("sched", schedulerPort).WithAppProtocol("kubernetes.io/h2c"),
 			},
 		},
 		{
 			name:   schedulerInternalServiceName(cluster),
 			config: services.Internal,
-			ports: []corev1.ServicePort{
-				{Name: "worker-sched", Port: 5050, Protocol: corev1.ProtocolTCP},
-				{Name: "obser-grpc", Port: 5049, Protocol: corev1.ProtocolTCP},
+			ports: []*corev1ac.ServicePortApplyConfiguration{
+				servicePort("worker-sched", 5050),
+				servicePort("obser-grpc", 5049),
 			},
 		},
 		{
 			name:   observatoryServiceName(cluster),
 			config: serviceConfig(services.Observatory),
-			ports: []corev1.ServicePort{
-				{Name: "obser-rest", Port: observatoryRESTPort, Protocol: corev1.ProtocolTCP},
+			ports: []*corev1ac.ServicePortApplyConfiguration{
+				servicePort("obser-rest", observatoryRESTPort),
 			},
 		},
 	}
@@ -499,59 +515,58 @@ func (r *PolarsClusterReconciler) reconcileServices(ctx context.Context, cluster
 	return err
 }
 
-func (r *PolarsClusterReconciler) reconcileService(ctx context.Context, cluster *computev1.PolarsCluster, name string, config *computev1.ServiceConfig, ports []corev1.ServicePort, selector map[string]string) error {
-	serviceType := corev1.ServiceTypeClusterIP
-	var annotations map[string]string
-	publishNotReadyAddresses := true
-	var clusterIP string
-	if config != nil {
-		if config.Type != nil && *config.Type != "" {
-			serviceType = *config.Type
-		}
-		annotations = config.Annotations
-		publishNotReadyAddresses = ptr.Deref(config.PublishNotReadyAddresses, true)
-		clusterIP = config.ClusterIP
+func (r *PolarsClusterReconciler) reconcileService(ctx context.Context, cluster *computev1.PolarsCluster, name string, config *computev1.ServiceConfig, ports []*corev1ac.ServicePortApplyConfiguration, selector map[string]string) error {
+	cfg := ptr.Deref(config, computev1.ServiceConfig{})
+	spec := corev1ac.ServiceSpec().
+		WithType(corev1.ServiceTypeClusterIP).
+		WithPorts(ports...).
+		WithSelector(selector).
+		WithPublishNotReadyAddresses(ptr.Deref(cfg.PublishNotReadyAddresses, true))
+	if cfg.Type != nil && *cfg.Type != "" {
+		spec.WithType(*cfg.Type)
+	}
+	if cfg.ClusterIP != "" {
+		spec.WithClusterIP(cfg.ClusterIP)
 	}
 
-	var existing corev1.Service
-	err := r.Get(ctx, client.ObjectKey{Namespace: cluster.Namespace, Name: name}, &existing)
-	if apierrors.IsNotFound(err) {
-		service := corev1.Service{
-			ObjectMeta: v1.ObjectMeta{
-				Name:        name,
-				Namespace:   cluster.Namespace,
-				Labels:      schedulerObjectLabels(cluster),
-				Annotations: annotations,
-			},
-			Spec: corev1.ServiceSpec{
-				Type:                     serviceType,
-				ClusterIP:                clusterIP,
-				Ports:                    ports,
-				Selector:                 selector,
-				PublishNotReadyAddresses: publishNotReadyAddresses,
-			},
-		}
+	service := corev1ac.Service(name, cluster.Namespace).
+		WithLabels(schedulerObjectLabels(cluster)).
+		WithAnnotations(cfg.Annotations).
+		WithOwnerReferences(controllerRef(cluster)).
+		WithSpec(spec)
+	return r.applyOwned(ctx, cluster, &corev1.Service{ObjectMeta: v1.ObjectMeta{Name: name, Namespace: cluster.Namespace}}, service, "Service")
+}
 
-		if err := controllerutil.SetControllerReference(cluster, &service, r.Scheme); err != nil {
-			return err
-		}
-		if err := r.Create(ctx, &service); err != nil {
-			return classifyAPIError("ServiceRejected", err)
-		}
-		return nil
-	} else if err != nil {
+// applyOwned server-side applies ac, so fields others set on obj survive and
+// ones dropped from ac are removed. It reads obj into place first and refuses
+// to take over one another controller owns. Errors carry the reasons
+// <reasonPrefix>Conflict and <reasonPrefix>Rejected.
+func (r *PolarsClusterReconciler) applyOwned(ctx context.Context, cluster *computev1.PolarsCluster, obj client.Object, ac runtime.ApplyConfiguration, reasonPrefix string) error {
+	if err := r.Get(ctx, client.ObjectKeyFromObject(obj), obj); client.IgnoreNotFound(err) != nil {
 		return err
 	}
-
-	existing.Annotations = annotations
-	existing.Spec.Type = serviceType
-	existing.Spec.Ports = ports
-	existing.Spec.Selector = selector
-	existing.Spec.PublishNotReadyAddresses = publishNotReadyAddresses
-	if err := r.Update(ctx, &existing); err != nil {
-		return classifyAPIError("ServiceRejected", err)
+	if owner := v1.GetControllerOf(obj); owner != nil && owner.UID != cluster.UID {
+		gvk, err := apiutil.GVKForObject(obj, r.Scheme)
+		if err != nil {
+			return err
+		}
+		return specErrorf(reasonPrefix+"Conflict", "%s %s is %w: %s %s", gvk.Kind, obj.GetName(), errConflict, owner.Kind, owner.Name)
 	}
-	return nil
+	return classifyAPIError(reasonPrefix+"Rejected", r.Apply(ctx, ac, fieldOwner, client.ForceOwnership))
+}
+
+func controllerRef(cluster *computev1.PolarsCluster) *metav1ac.OwnerReferenceApplyConfiguration {
+	return metav1ac.OwnerReference().
+		WithAPIVersion(computev1.GroupVersion.String()).
+		WithKind("PolarsCluster").
+		WithName(cluster.Name).
+		WithUID(cluster.UID).
+		WithController(true).
+		WithBlockOwnerDeletion(true)
+}
+
+func servicePort(name string, port int32) *corev1ac.ServicePortApplyConfiguration {
+	return corev1ac.ServicePort().WithName(name).WithPort(port).WithProtocol(corev1.ProtocolTCP)
 }
 
 func schedulerServices(cluster *computev1.PolarsCluster) computev1.SchedulerServicesSpec {

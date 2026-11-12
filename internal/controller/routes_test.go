@@ -15,7 +15,6 @@ import (
 	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/apiutil"
-	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 	gatewayv1 "sigs.k8s.io/gateway-api/apis/v1"
 
@@ -30,6 +29,10 @@ var _ = Describe("PolarsCluster Gateway API routes", func() {
 		Namespace:   ptr.To(gatewayv1.Namespace("gateway-system")),
 		SectionName: ptr.To(gatewayv1.SectionName("https")),
 	}
+
+	foreignController := []metav1.OwnerReference{{
+		APIVersion: "v1", Kind: "ConfigMap", Name: "other", UID: "other-uid", Controller: ptr.To(true),
+	}}
 
 	routedCluster := func(name string) *computev1.PolarsCluster {
 		return &computev1.PolarsCluster{
@@ -72,9 +75,9 @@ var _ = Describe("PolarsCluster Gateway API routes", func() {
 		}
 	}
 
-	reconcileCluster := func(ctx context.Context, c client.Client, cluster *computev1.PolarsCluster, gatewayAPIEnabled bool) reconcile.Result {
+	reconcileCluster := func(ctx context.Context, cluster *computev1.PolarsCluster, gatewayAPIEnabled bool) reconcile.Result {
 		reconciler := &PolarsClusterReconciler{
-			Client:            c,
+			Client:            k8sClient,
 			Scheme:            k8sClient.Scheme(),
 			Recorder:          events.NewFakeRecorder(10),
 			GatewayAPIEnabled: gatewayAPIEnabled,
@@ -111,7 +114,7 @@ var _ = Describe("PolarsCluster Gateway API routes", func() {
 		Expect(k8sClient.Create(ctx, cluster)).To(Succeed())
 		defer func() { _ = k8sClient.Delete(ctx, cluster) }()
 
-		reconcileCluster(ctx, k8sClient, cluster, true)
+		reconcileCluster(ctx, cluster, true)
 
 		var grpcRoute gatewayv1.GRPCRoute
 		Expect(k8sClient.Get(ctx, types.NamespacedName{Name: "routes-create-scheduler", Namespace: validationNamespace}, &grpcRoute)).To(Succeed())
@@ -146,20 +149,44 @@ var _ = Describe("PolarsCluster Gateway API routes", func() {
 		Expect(cond.Message).To(ContainSubstring("GRPCRoute routes-create-scheduler"))
 
 		By("verifying a repeated reconcile doesn't write the unchanged routes")
-		var routeUpdates []string
-		watchClient, err := client.NewWithWatch(cfg, client.Options{Scheme: k8sClient.Scheme()})
-		Expect(err).NotTo(HaveOccurred())
-		counting := interceptor.NewClient(watchClient, interceptor.Funcs{
-			Update: func(ctx context.Context, c client.WithWatch, obj client.Object, opts ...client.UpdateOption) error {
-				switch obj.(type) {
-				case *gatewayv1.GRPCRoute, *gatewayv1.HTTPRoute:
-					routeUpdates = append(routeUpdates, obj.GetName())
-				}
-				return c.Update(ctx, obj, opts...)
-			},
-		})
-		reconcileCluster(ctx, counting, cluster, true)
-		Expect(routeUpdates).To(BeEmpty())
+		reconcileCluster(ctx, cluster, true)
+		for _, route := range []client.Object{&grpcRoute, &httpRoute} {
+			resourceVersion := route.GetResourceVersion()
+			Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(route), route)).To(Succeed())
+			Expect(route.GetResourceVersion()).To(Equal(resourceVersion), "%T was rewritten", route)
+		}
+	})
+
+	It("should keep annotations added by others to its Service and route, and remove ones dropped from the spec", func() {
+		ctx := context.Background()
+		cluster := routedCluster("foreign-annotations")
+		cluster.Spec.Scheduler.Services.Scheduler.Annotations["example.com/dropped"] = "soon"
+		cluster.Spec.Scheduler.Services.Scheduler.Route.Annotations["example.com/dropped"] = "soon"
+		Expect(k8sClient.Create(ctx, cluster)).To(Succeed())
+		defer func() { _ = k8sClient.Delete(ctx, cluster) }()
+		reconcileCluster(ctx, cluster, true)
+
+		By("annotating the Service and GRPCRoute outside the operator")
+		key := types.NamespacedName{Name: "foreign-annotations-scheduler", Namespace: validationNamespace}
+		service, route := &corev1.Service{}, &gatewayv1.GRPCRoute{}
+		for _, obj := range []client.Object{service, route} {
+			Expect(k8sClient.Get(ctx, key, obj)).To(Succeed())
+			patch := client.MergeFrom(obj.DeepCopyObject().(client.Object))
+			obj.GetAnnotations()["example.com/external"] = "kept"
+			Expect(k8sClient.Patch(ctx, obj, patch)).To(Succeed())
+		}
+
+		By("dropping an annotation from the spec")
+		delete(cluster.Spec.Scheduler.Services.Scheduler.Annotations, "example.com/dropped")
+		delete(cluster.Spec.Scheduler.Services.Scheduler.Route.Annotations, "example.com/dropped")
+		Expect(k8sClient.Update(ctx, cluster)).To(Succeed())
+		reconcileCluster(ctx, cluster, true)
+
+		for _, obj := range []client.Object{service, route} {
+			Expect(k8sClient.Get(ctx, key, obj)).To(Succeed())
+			Expect(obj.GetAnnotations()).To(HaveKeyWithValue("example.com/external", "kept"))
+			Expect(obj.GetAnnotations()).NotTo(HaveKey("example.com/dropped"))
+		}
 	})
 
 	It("should mark RoutesReady once every parent accepts both routes", func() {
@@ -168,14 +195,14 @@ var _ = Describe("PolarsCluster Gateway API routes", func() {
 		Expect(k8sClient.Create(ctx, cluster)).To(Succeed())
 		defer func() { _ = k8sClient.Delete(ctx, cluster) }()
 
-		reconcileCluster(ctx, k8sClient, cluster, true)
+		reconcileCluster(ctx, cluster, true)
 
 		var grpcRoute gatewayv1.GRPCRoute
 		Expect(k8sClient.Get(ctx, types.NamespacedName{Name: "routes-accepted-scheduler", Namespace: validationNamespace}, &grpcRoute)).To(Succeed())
 		grpcRoute.Status.Parents = []gatewayv1.RouteParentStatus{routeParentStatus(gateway, metav1.ConditionTrue, metav1.ConditionTrue)}
 		Expect(k8sClient.Status().Update(ctx, &grpcRoute)).To(Succeed())
 
-		reconcileCluster(ctx, k8sClient, cluster, true)
+		reconcileCluster(ctx, cluster, true)
 		cond := expectRoutesReady(cluster, metav1.ConditionFalse, "NotAccepted")
 		Expect(cond.Message).To(ContainSubstring("HTTPRoute routes-accepted-observatory"))
 
@@ -184,7 +211,7 @@ var _ = Describe("PolarsCluster Gateway API routes", func() {
 		httpRoute.Status.Parents = []gatewayv1.RouteParentStatus{routeParentStatus(gateway, metav1.ConditionTrue, metav1.ConditionTrue)}
 		Expect(k8sClient.Status().Update(ctx, &httpRoute)).To(Succeed())
 
-		reconcileCluster(ctx, k8sClient, cluster, true)
+		reconcileCluster(ctx, cluster, true)
 		expectRoutesReady(cluster, metav1.ConditionTrue, "Reconciled")
 	})
 
@@ -194,7 +221,7 @@ var _ = Describe("PolarsCluster Gateway API routes", func() {
 		Expect(k8sClient.Create(ctx, cluster)).To(Succeed())
 		defer func() { _ = k8sClient.Delete(ctx, cluster) }()
 
-		reconcileCluster(ctx, k8sClient, cluster, true)
+		reconcileCluster(ctx, cluster, true)
 
 		By("replacing the operator's HTTPRoute with one it does not own")
 		unowned := &gatewayv1.HTTPRoute{ObjectMeta: metav1.ObjectMeta{Name: "routes-removed-observatory", Namespace: validationNamespace}}
@@ -204,7 +231,7 @@ var _ = Describe("PolarsCluster Gateway API routes", func() {
 
 		cluster.Spec.Scheduler.Services = nil
 		Expect(k8sClient.Update(ctx, cluster)).To(Succeed())
-		reconcileCluster(ctx, k8sClient, cluster, true)
+		reconcileCluster(ctx, cluster, true)
 
 		err := k8sClient.Get(ctx, types.NamespacedName{Name: "routes-removed-scheduler", Namespace: validationNamespace}, &gatewayv1.GRPCRoute{})
 		Expect(apierrors.IsNotFound(err)).To(BeTrue(), "expected the GRPCRoute to be deleted, got %v", err)
@@ -218,7 +245,7 @@ var _ = Describe("PolarsCluster Gateway API routes", func() {
 		Expect(k8sClient.Create(ctx, cluster)).To(Succeed())
 		defer func() { _ = k8sClient.Delete(ctx, cluster) }()
 
-		reconcileCluster(ctx, k8sClient, cluster, false)
+		reconcileCluster(ctx, cluster, false)
 
 		expectRoutesReady(cluster, metav1.ConditionFalse, "GatewayAPIUnavailable")
 		err := k8sClient.Get(ctx, types.NamespacedName{Name: "routes-unavailable-scheduler", Namespace: validationNamespace}, &gatewayv1.GRPCRoute{})
@@ -232,24 +259,49 @@ var _ = Describe("PolarsCluster Gateway API routes", func() {
 		defer func() { _ = k8sClient.Delete(ctx, cluster) }()
 
 		foreign := &gatewayv1.HTTPRoute{ObjectMeta: metav1.ObjectMeta{
-			Name:      "routes-conflict-observatory",
-			Namespace: validationNamespace,
-			OwnerReferences: []metav1.OwnerReference{{
-				APIVersion: "v1", Kind: "ConfigMap", Name: "other", UID: "other-uid", Controller: ptr.To(true),
-			}},
+			Name:            "routes-conflict-observatory",
+			Namespace:       validationNamespace,
+			OwnerReferences: foreignController,
 		}}
 		Expect(k8sClient.Create(ctx, foreign)).To(Succeed())
 		defer func() { _ = k8sClient.Delete(ctx, foreign) }()
 
-		result := reconcileCluster(ctx, k8sClient, cluster, true)
-		Expect(result.RequeueAfter).To(Equal(routeConflictRetryInterval))
+		result := reconcileCluster(ctx, cluster, true)
+		Expect(result.RequeueAfter).To(Equal(conflictRetryInterval))
 
-		expectRoutesReady(cluster, metav1.ConditionFalse, reasonRouteConflict)
+		cond := expectRoutesReady(cluster, metav1.ConditionFalse, "RouteConflict")
+		Expect(cond.Message).To(Equal("HTTPRoute routes-conflict-observatory is already controlled by another object: ConfigMap other"))
 		Expect(meta.IsStatusConditionFalse(cluster.Status.Conditions, conditionReady)).To(BeTrue())
 		Expect(k8sClient.Get(ctx, types.NamespacedName{Name: "routes-conflict-scheduler", Namespace: validationNamespace}, &corev1.Pod{})).
 			To(Succeed())
 		Expect(k8sClient.Get(ctx, types.NamespacedName{Name: "routes-conflict-scheduler", Namespace: validationNamespace}, &gatewayv1.GRPCRoute{})).
 			To(Succeed())
+	})
+
+	It("should report a Service owned by another controller as a ServiceConflict and retry", func() {
+		ctx := context.Background()
+		cluster := routedCluster("service-conflict")
+		Expect(k8sClient.Create(ctx, cluster)).To(Succeed())
+		defer func() { _ = k8sClient.Delete(ctx, cluster) }()
+
+		foreign := &corev1.Service{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:            "service-conflict-scheduler-internal",
+				Namespace:       validationNamespace,
+				OwnerReferences: foreignController,
+			},
+			Spec: corev1.ServiceSpec{Ports: []corev1.ServicePort{{Port: 80}}},
+		}
+		Expect(k8sClient.Create(ctx, foreign)).To(Succeed())
+		defer func() { _ = k8sClient.Delete(ctx, foreign) }()
+
+		result := reconcileCluster(ctx, cluster, true)
+		Expect(result.RequeueAfter).To(Equal(conflictRetryInterval))
+
+		cond := meta.FindStatusCondition(cluster.Status.Conditions, conditionReady)
+		Expect(cond).NotTo(BeNil())
+		Expect(cond.Reason).To(Equal("ServiceConflict"))
+		Expect(cond.Message).To(Equal("Service service-conflict-scheduler-internal is already controlled by another object: ConfigMap other"))
 	})
 
 	It("should reject a route without parentRefs", func() {
