@@ -2,8 +2,11 @@ package controller
 
 import (
 	"fmt"
+	"slices"
+	"strconv"
 
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 
 	computev1 "github.com/polars-inc/polars-k8s-operator/api/v1"
 )
@@ -99,6 +102,7 @@ func computedWorkerPodSpec(cluster *computev1.PolarsCluster, containerName strin
 		extras.Section("pyiceberg").Bool("enabled", true)
 	}
 	b.String("POLARS_TEMP_DIR", temporaryDataMountPath+"/temporary_data")
+	computedOutOfCoreEnv(b, wp.OutOfCore, baseContainer.Env)
 	b.String("OTEL_SERVICE_NAME", fmt.Sprintf("%s-worker", cluster.Name))
 
 	if spec.AcceptEula {
@@ -171,6 +175,53 @@ func workerHeartBeatInterval(wp computev1.WorkerPoolDeclaration) string {
 		return wp.HeartBeatInterval.Duration.String()
 	}
 	return defaultHeartBeatInterval
+}
+
+// computedOutOfCoreEnv leaves unset budgets out so Polars applies its own
+// defaults. The spill dir and OOM-kill threshold defaults yield to the same
+// names in userEnv (the pod template's env): the merge would otherwise
+// replace the user's spill dir, and combine the user's value with the
+// default's valueFrom into an env var the API server rejects.
+func computedOutOfCoreEnv(b *envBuilder, outOfCore *computev1.OutOfCoreSpec, userEnv []corev1.EnvVar) {
+	if outOfCore == nil {
+		outOfCore = &computev1.OutOfCoreSpec{}
+	}
+	userSets := func(name string) bool {
+		return slices.ContainsFunc(userEnv, func(e corev1.EnvVar) bool { return e.Name == name })
+	}
+
+	const spillDir, oomKillThreshold = "POLARS_OOC_SPILL_DIR", "POLARS_OOMKILL_THRESHOLD_MB"
+
+	if outOfCore.SpillDir != "" {
+		b.String(spillDir, outOfCore.SpillDir)
+	} else if !userSets(spillDir) {
+		b.String(spillDir, temporaryDataMountPath+"/spill")
+	}
+
+	if outOfCore.MemoryBudgetFraction != nil {
+		// Shortest exact form: "0.7", not "0.700000".
+		b.String("POLARS_OOC_MEMORY_BUDGET_FRACTION", strconv.FormatFloat(*outOfCore.MemoryBudgetFraction, 'f', -1, 64))
+	}
+	if outOfCore.MemoryBudgetMB != nil {
+		b.Int("POLARS_OOC_MEMORY_BUDGET_MB", *outOfCore.MemoryBudgetMB)
+	}
+	if outOfCore.DiskBudgetMB != nil {
+		b.Int("POLARS_OOC_DISK_BUDGET_MB", *outOfCore.DiskBudgetMB)
+	}
+
+	if outOfCore.OOMKillThresholdMB != nil {
+		b.Int(oomKillThreshold, *outOfCore.OOMKillThresholdMB)
+	} else if !userSets(oomKillThreshold) {
+		// Polars reads MB as 10^6 bytes, so the limit counted in MiB lands at
+		// ~95% of it. Without a limit the kubelet fills in the node's
+		// allocatable memory.
+		b.From(oomKillThreshold, &corev1.EnvVarSource{
+			ResourceFieldRef: &corev1.ResourceFieldSelector{
+				Resource: "limits.memory",
+				Divisor:  resource.MustParse("1Mi"),
+			},
+		})
+	}
 }
 
 // computedShuffleDataConfig appends ShuffleDataSpec's env vars under b

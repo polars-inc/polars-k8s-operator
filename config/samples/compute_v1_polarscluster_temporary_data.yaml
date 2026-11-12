@@ -1,6 +1,7 @@
-# Temporary data is used by Polars itself (e.g. the streaming engine, or
-# downloading remote files). It defaults to an emptyDir; give it a
-# dedicated ephemeral volume to prevent large queries exhausting host disk.
+# Temporary data is used by Polars itself (e.g. the streaming engine,
+# out-of-core spill files, or downloading remote files). It defaults to an
+# emptyDir; give it a dedicated ephemeral volume to prevent large queries
+# exhausting host disk, and size it for the data your largest queries spill.
 apiVersion: compute.pola.rs/v1
 kind: PolarsCluster
 metadata:
@@ -19,3 +20,8 @@ spec:
       ephemeralVolumeClaim:
         storageClassName: "hostpath" # As configured in your cluster
         size: 125Gi
+    # Optional: workers spill to the temporary data volume when memory runs
+    # low. These override the Polars defaults.
+    outOfCore:
+      memoryBudgetFraction: 0.7 # Spill earlier than the default 0.8
+      diskBudgetMB: 100000 # Abort a query that spills more than this (default 64000)
