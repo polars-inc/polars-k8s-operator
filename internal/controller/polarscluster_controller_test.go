@@ -33,6 +33,24 @@ const (
 	testWorkspaceIDKey  = "workspace-id"
 )
 
+// testLicenseSpec passes admission; no test creates the Secret it names.
+var testLicenseSpec = computev1.LicenseSpec{
+	OnPrem: &computev1.LicenseOnPremSpec{
+		ClientID: computev1.ValueOrSource{ValueFrom: &corev1.EnvVarSource{SecretKeyRef: &corev1.SecretKeySelector{
+			LocalObjectReference: corev1.LocalObjectReference{Name: licenseSecretName},
+			Key:                  testClientIDKey,
+		}}},
+		ClientSecret: computev1.ValueOrSource{ValueFrom: &corev1.EnvVarSource{SecretKeyRef: &corev1.SecretKeySelector{
+			LocalObjectReference: corev1.LocalObjectReference{Name: licenseSecretName},
+			Key:                  testClientSecretKey,
+		}}},
+		WorkspaceID: computev1.ValueOrSource{ValueFrom: &corev1.EnvVarSource{SecretKeyRef: &corev1.SecretKeySelector{
+			LocalObjectReference: corev1.LocalObjectReference{Name: licenseSecretName},
+			Key:                  testWorkspaceIDKey,
+		}}},
+	},
+}
+
 var _ = Describe("PolarsCluster Controller", func() {
 	Context("When reconciling a resource", func() {
 		const (
@@ -58,22 +76,7 @@ var _ = Describe("PolarsCluster Controller", func() {
 						Namespace: resourceNamespace,
 					},
 					Spec: computev1.PolarsClusterSpec{
-						License: computev1.LicenseSpec{
-							OnPrem: &computev1.LicenseOnPremSpec{
-								ClientID: computev1.ValueOrSource{ValueFrom: &corev1.EnvVarSource{SecretKeyRef: &corev1.SecretKeySelector{
-									LocalObjectReference: corev1.LocalObjectReference{Name: licenseSecretName},
-									Key:                  testClientIDKey,
-								}}},
-								ClientSecret: computev1.ValueOrSource{ValueFrom: &corev1.EnvVarSource{SecretKeyRef: &corev1.SecretKeySelector{
-									LocalObjectReference: corev1.LocalObjectReference{Name: licenseSecretName},
-									Key:                  testClientSecretKey,
-								}}},
-								WorkspaceID: computev1.ValueOrSource{ValueFrom: &corev1.EnvVarSource{SecretKeyRef: &corev1.SecretKeySelector{
-									LocalObjectReference: corev1.LocalObjectReference{Name: licenseSecretName},
-									Key:                  testWorkspaceIDKey,
-								}}},
-							},
-						},
+						License: testLicenseSpec,
 						Scheduler: &computev1.SchedulerSpec{
 							PodTemplate: &corev1.PodTemplateSpec{
 								ObjectMeta: metav1.ObjectMeta{
@@ -171,22 +174,7 @@ var _ = Describe("PolarsCluster validation", func() {
 		cluster := &computev1.PolarsCluster{
 			ObjectMeta: metav1.ObjectMeta{Name: "validation-version-default", Namespace: validationNamespace},
 			Spec: computev1.PolarsClusterSpec{
-				License: computev1.LicenseSpec{
-					OnPrem: &computev1.LicenseOnPremSpec{
-						ClientID: computev1.ValueOrSource{ValueFrom: &corev1.EnvVarSource{SecretKeyRef: &corev1.SecretKeySelector{
-							LocalObjectReference: corev1.LocalObjectReference{Name: licenseSecretName},
-							Key:                  testClientIDKey,
-						}}},
-						ClientSecret: computev1.ValueOrSource{ValueFrom: &corev1.EnvVarSource{SecretKeyRef: &corev1.SecretKeySelector{
-							LocalObjectReference: corev1.LocalObjectReference{Name: licenseSecretName},
-							Key:                  testClientSecretKey,
-						}}},
-						WorkspaceID: computev1.ValueOrSource{ValueFrom: &corev1.EnvVarSource{SecretKeyRef: &corev1.SecretKeySelector{
-							LocalObjectReference: corev1.LocalObjectReference{Name: licenseSecretName},
-							Key:                  testWorkspaceIDKey,
-						}}},
-					},
-				},
+				License: testLicenseSpec,
 				WorkerPool: computev1.WorkerPoolDeclaration{
 					PodTemplate: &corev1.PodTemplateSpec{
 						Spec: corev1.PodSpec{Containers: []corev1.Container{{Name: componentWorker, Image: testStandInImage}}},
@@ -211,23 +199,7 @@ var _ = Describe("PolarsCluster validation", func() {
 				// Semver-valid, so it passes admission; only the controller
 				// enforces the minimum.
 				Version: "0.5.0",
-				License: computev1.LicenseSpec{
-
-					OnPrem: &computev1.LicenseOnPremSpec{
-						ClientID: computev1.ValueOrSource{ValueFrom: &corev1.EnvVarSource{SecretKeyRef: &corev1.SecretKeySelector{
-							LocalObjectReference: corev1.LocalObjectReference{Name: licenseSecretName},
-							Key:                  testClientIDKey,
-						}}},
-						ClientSecret: computev1.ValueOrSource{ValueFrom: &corev1.EnvVarSource{SecretKeyRef: &corev1.SecretKeySelector{
-							LocalObjectReference: corev1.LocalObjectReference{Name: licenseSecretName},
-							Key:                  testClientSecretKey,
-						}}},
-						WorkspaceID: computev1.ValueOrSource{ValueFrom: &corev1.EnvVarSource{SecretKeyRef: &corev1.SecretKeySelector{
-							LocalObjectReference: corev1.LocalObjectReference{Name: licenseSecretName},
-							Key:                  testWorkspaceIDKey,
-						}}},
-					},
-				},
+				License: testLicenseSpec,
 				WorkerPool: computev1.WorkerPoolDeclaration{
 					PodTemplate: &corev1.PodTemplateSpec{
 						Spec: corev1.PodSpec{Containers: []corev1.Container{{Name: componentWorker, Image: testStandInImage}}},
@@ -261,22 +233,7 @@ var _ = Describe("PolarsCluster validation", func() {
 			ObjectMeta: metav1.ObjectMeta{Name: "validation-version", Namespace: validationNamespace},
 			Spec: computev1.PolarsClusterSpec{
 				Version: "nightly",
-				License: computev1.LicenseSpec{
-					OnPrem: &computev1.LicenseOnPremSpec{
-						ClientID: computev1.ValueOrSource{ValueFrom: &corev1.EnvVarSource{SecretKeyRef: &corev1.SecretKeySelector{
-							LocalObjectReference: corev1.LocalObjectReference{Name: licenseSecretName},
-							Key:                  testClientIDKey,
-						}}},
-						ClientSecret: computev1.ValueOrSource{ValueFrom: &corev1.EnvVarSource{SecretKeyRef: &corev1.SecretKeySelector{
-							LocalObjectReference: corev1.LocalObjectReference{Name: licenseSecretName},
-							Key:                  testClientSecretKey,
-						}}},
-						WorkspaceID: computev1.ValueOrSource{ValueFrom: &corev1.EnvVarSource{SecretKeyRef: &corev1.SecretKeySelector{
-							LocalObjectReference: corev1.LocalObjectReference{Name: licenseSecretName},
-							Key:                  testWorkspaceIDKey,
-						}}},
-					},
-				},
+				License: testLicenseSpec,
 				WorkerPool: computev1.WorkerPoolDeclaration{
 					PodTemplate: &corev1.PodTemplateSpec{
 						Spec: corev1.PodSpec{Containers: []corev1.Container{{Name: componentWorker, Image: testStandInImage}}},
@@ -294,33 +251,59 @@ var _ = Describe("PolarsCluster validation", func() {
 		Expect(k8sClient.Create(context.Background(), cluster)).To(Succeed())
 		_ = k8sClient.Delete(context.Background(), cluster)
 	})
+	It("should accept a non-negative outOfCore.memoryBudgetFraction and keep it exact through the API server", func() {
+		ctx := context.Background()
+		newCluster := func(name string, fraction float64) *computev1.PolarsCluster {
+			return &computev1.PolarsCluster{
+				ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: validationNamespace},
+				Spec: computev1.PolarsClusterSpec{
+					License: testLicenseSpec,
+					WorkerPool: computev1.WorkerPoolDeclaration{
+						PodTemplate: &corev1.PodTemplateSpec{
+							Spec: corev1.PodSpec{Containers: []corev1.Container{{Name: componentWorker, Image: testStandInImage}}},
+						},
+						OutOfCore: &computev1.OutOfCoreSpec{MemoryBudgetFraction: &fraction},
+					},
+				},
+			}
+		}
+
+		err := k8sClient.Create(ctx, newCluster("validation-ooc-negative", -0.1))
+		Expect(err).To(HaveOccurred())
+		Expect(err.Error()).To(ContainSubstring("memoryBudgetFraction"))
+
+		// The client sends 1 as a JSON integer, which the number schema must accept.
+		for name, fraction := range map[string]float64{"validation-ooc-fraction": 0.7, "validation-ooc-integer": 1} {
+			cluster := newCluster(name, fraction)
+			Expect(k8sClient.Create(ctx, cluster)).To(Succeed())
+			defer func() { _ = k8sClient.Delete(ctx, cluster) }()
+
+			stored := &computev1.PolarsCluster{}
+			Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(cluster), stored)).To(Succeed())
+			Expect(*stored.Spec.WorkerPool.OutOfCore.MemoryBudgetFraction).To(Equal(fraction))
+
+			before, err := BuildWorkerPodTemplate(stored)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(k8sClient.Update(ctx, stored)).To(Succeed())
+			Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(cluster), stored)).To(Succeed())
+			after, err := BuildWorkerPodTemplate(stored)
+			Expect(err).NotTo(HaveOccurred())
+			beforeHash, err := podTemplateHash(&before.Spec)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(podTemplateHash(&after.Spec)).To(Equal(beforeHash),
+				"a read-modify-write must not change the worker template")
+		}
+	})
 })
 
 var _ = Describe("PolarsCluster spec-error handling", func() {
-	licenseSpec := computev1.LicenseSpec{
-		OnPrem: &computev1.LicenseOnPremSpec{
-			ClientID: computev1.ValueOrSource{ValueFrom: &corev1.EnvVarSource{SecretKeyRef: &corev1.SecretKeySelector{
-				LocalObjectReference: corev1.LocalObjectReference{Name: licenseSecretName},
-				Key:                  testClientIDKey,
-			}}},
-			ClientSecret: computev1.ValueOrSource{ValueFrom: &corev1.EnvVarSource{SecretKeyRef: &corev1.SecretKeySelector{
-				LocalObjectReference: corev1.LocalObjectReference{Name: licenseSecretName},
-				Key:                  testClientSecretKey,
-			}}},
-			WorkspaceID: computev1.ValueOrSource{ValueFrom: &corev1.EnvVarSource{SecretKeyRef: &corev1.SecretKeySelector{
-				LocalObjectReference: corev1.LocalObjectReference{Name: licenseSecretName},
-				Key:                  testWorkspaceIDKey,
-			}}},
-		},
-	}
-
 	It("should mark an empty scheduler podTemplate not Ready without returning an error", func() {
 		ctx := context.Background()
 		name := types.NamespacedName{Name: "spec-error-scheduler", Namespace: validationNamespace}
 		cluster := &computev1.PolarsCluster{
 			ObjectMeta: metav1.ObjectMeta{Name: name.Name, Namespace: name.Namespace},
 			Spec: computev1.PolarsClusterSpec{
-				License:   licenseSpec,
+				License:   testLicenseSpec,
 				Scheduler: &computev1.SchedulerSpec{},
 				WorkerPool: computev1.WorkerPoolDeclaration{
 					PodTemplate: &corev1.PodTemplateSpec{
@@ -355,7 +338,7 @@ var _ = Describe("PolarsCluster spec-error handling", func() {
 		cluster := &computev1.PolarsCluster{
 			ObjectMeta: metav1.ObjectMeta{Name: name.Name, Namespace: name.Namespace},
 			Spec: computev1.PolarsClusterSpec{
-				License: licenseSpec,
+				License: testLicenseSpec,
 				Scheduler: &computev1.SchedulerSpec{
 					PodTemplate: &corev1.PodTemplateSpec{
 						Spec: corev1.PodSpec{Containers: []corev1.Container{{Name: componentScheduler, Image: testStandInImage}}},
@@ -395,7 +378,7 @@ var _ = Describe("PolarsCluster spec-error handling", func() {
 		cluster := &computev1.PolarsCluster{
 			ObjectMeta: metav1.ObjectMeta{Name: longName, Namespace: validationNamespace},
 			Spec: computev1.PolarsClusterSpec{
-				License: licenseSpec,
+				License: testLicenseSpec,
 				Scheduler: &computev1.SchedulerSpec{
 					PodTemplate: &corev1.PodTemplateSpec{
 						Spec: corev1.PodSpec{Containers: []corev1.Container{{Name: componentScheduler, Image: testStandInImage}}},
@@ -436,7 +419,7 @@ var _ = Describe("PolarsCluster spec-error handling", func() {
 		cluster := &computev1.PolarsCluster{
 			ObjectMeta: metav1.ObjectMeta{Name: name.Name, Namespace: name.Namespace},
 			Spec: computev1.PolarsClusterSpec{
-				License: licenseSpec,
+				License: testLicenseSpec,
 				Scheduler: &computev1.SchedulerSpec{
 					PodTemplate: &corev1.PodTemplateSpec{
 						Spec: corev1.PodSpec{Containers: []corev1.Container{{Name: componentScheduler, Image: testStandInImage}}},
@@ -476,7 +459,7 @@ var _ = Describe("PolarsCluster spec-error handling", func() {
 		cluster := &computev1.PolarsCluster{
 			ObjectMeta: metav1.ObjectMeta{Name: name.Name, Namespace: name.Namespace},
 			Spec: computev1.PolarsClusterSpec{
-				License: licenseSpec,
+				License: testLicenseSpec,
 				Scheduler: &computev1.SchedulerSpec{
 					PodTemplate: &corev1.PodTemplateSpec{
 						Spec: corev1.PodSpec{Containers: []corev1.Container{{Name: componentScheduler, Image: testStandInImage}}},
@@ -572,30 +555,13 @@ func drainEvents(recorder *events.FakeRecorder) []string {
 }
 
 var _ = Describe("PolarsCluster lifecycle events", func() {
-	licenseSpec := computev1.LicenseSpec{
-		OnPrem: &computev1.LicenseOnPremSpec{
-			ClientID: computev1.ValueOrSource{ValueFrom: &corev1.EnvVarSource{SecretKeyRef: &corev1.SecretKeySelector{
-				LocalObjectReference: corev1.LocalObjectReference{Name: licenseSecretName},
-				Key:                  testClientIDKey,
-			}}},
-			ClientSecret: computev1.ValueOrSource{ValueFrom: &corev1.EnvVarSource{SecretKeyRef: &corev1.SecretKeySelector{
-				LocalObjectReference: corev1.LocalObjectReference{Name: licenseSecretName},
-				Key:                  testClientSecretKey,
-			}}},
-			WorkspaceID: computev1.ValueOrSource{ValueFrom: &corev1.EnvVarSource{SecretKeyRef: &corev1.SecretKeySelector{
-				LocalObjectReference: corev1.LocalObjectReference{Name: licenseSecretName},
-				Key:                  testWorkspaceIDKey,
-			}}},
-		},
-	}
-
 	It("should record events for pod creation, template-change recreation, scale-down, and stopped-pod replacement", func() {
 		ctx := context.Background()
 		name := types.NamespacedName{Name: "lifecycle-events", Namespace: validationNamespace}
 		cluster := &computev1.PolarsCluster{
 			ObjectMeta: metav1.ObjectMeta{Name: name.Name, Namespace: name.Namespace},
 			Spec: computev1.PolarsClusterSpec{
-				License: licenseSpec,
+				License: testLicenseSpec,
 				Scheduler: &computev1.SchedulerSpec{
 					PodTemplate: &corev1.PodTemplateSpec{
 						Spec: corev1.PodSpec{Containers: []corev1.Container{{Name: componentScheduler, Image: testStandInImage}}},
@@ -691,30 +657,13 @@ var _ = Describe("PolarsCluster lifecycle events", func() {
 })
 
 var _ = Describe("PolarsCluster ServiceAccount reconciliation", func() {
-	licenseSpec := computev1.LicenseSpec{
-		OnPrem: &computev1.LicenseOnPremSpec{
-			ClientID: computev1.ValueOrSource{ValueFrom: &corev1.EnvVarSource{SecretKeyRef: &corev1.SecretKeySelector{
-				LocalObjectReference: corev1.LocalObjectReference{Name: licenseSecretName},
-				Key:                  testClientIDKey,
-			}}},
-			ClientSecret: computev1.ValueOrSource{ValueFrom: &corev1.EnvVarSource{SecretKeyRef: &corev1.SecretKeySelector{
-				LocalObjectReference: corev1.LocalObjectReference{Name: licenseSecretName},
-				Key:                  testClientSecretKey,
-			}}},
-			WorkspaceID: computev1.ValueOrSource{ValueFrom: &corev1.EnvVarSource{SecretKeyRef: &corev1.SecretKeySelector{
-				LocalObjectReference: corev1.LocalObjectReference{Name: licenseSecretName},
-				Key:                  testWorkspaceIDKey,
-			}}},
-		},
-	}
-
 	It("should create and own the ServiceAccount when create is true", func() {
 		ctx := context.Background()
 		name := types.NamespacedName{Name: "sa-create", Namespace: validationNamespace}
 		cluster := &computev1.PolarsCluster{
 			ObjectMeta: metav1.ObjectMeta{Name: name.Name, Namespace: name.Namespace},
 			Spec: computev1.PolarsClusterSpec{
-				License: licenseSpec,
+				License: testLicenseSpec,
 				Scheduler: &computev1.SchedulerSpec{
 					ServiceAccount: &computev1.ServiceAccountSpec{Create: true},
 					PodTemplate: &corev1.PodTemplateSpec{
@@ -751,7 +700,7 @@ var _ = Describe("PolarsCluster ServiceAccount reconciliation", func() {
 		cluster := &computev1.PolarsCluster{
 			ObjectMeta: metav1.ObjectMeta{Name: name.Name, Namespace: name.Namespace},
 			Spec: computev1.PolarsClusterSpec{
-				License: licenseSpec,
+				License: testLicenseSpec,
 				Scheduler: &computev1.SchedulerSpec{
 					PodTemplate: &corev1.PodTemplateSpec{
 						Spec: corev1.PodSpec{Containers: []corev1.Container{{Name: componentScheduler, Image: testStandInImage}}},

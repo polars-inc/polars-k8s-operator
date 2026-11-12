@@ -638,12 +638,57 @@ type WorkerPoolDeclaration struct {
 	ShuffleData *ShuffleDataSpec `json:"shuffleData,omitempty"`
 
 	// TemporaryData is the ephemeral storage for temporary data used by
-	// Polars (e.g. streaming data). Host-local SSD storage is recommended
-	// for better performance.
+	// Polars (e.g. streaming data and out-of-core spill files, see
+	// outOfCore). Host-local SSD storage is recommended for better
+	// performance.
 	// +optional
 	TemporaryData *TemporaryDataSpec `json:"temporaryData,omitempty"`
 
+	// OutOfCore tunes out-of-core execution: when memory runs low, workers
+	// spill data to disk instead of running out of memory.
+	// +optional
+	OutOfCore *OutOfCoreSpec `json:"outOfCore,omitempty"`
+
 	Extras ExtrasSpec `json:"extras,omitempty"`
+}
+
+// OutOfCoreSpec tunes out-of-core execution on the workers. MB values count
+// 10^6 bytes.
+type OutOfCoreSpec struct {
+	// SpillDir is the directory for spill files. Defaults to a directory on
+	// the temporaryData volume; set it to use storage you mount yourself.
+	// Sets POLARS_OOC_SPILL_DIR.
+	// +optional
+	SpillDir string `json:"spillDir,omitempty"`
+
+	// MemoryBudgetFraction starts spilling when memory use exceeds this
+	// fraction of the container memory limit, or of the node memory without
+	// a limit. Polars defaults to 0.8. Sets POLARS_OOC_MEMORY_BUDGET_FRACTION.
+	// +kubebuilder:validation:Minimum=0
+	// +optional
+	MemoryBudgetFraction *float64 `json:"memoryBudgetFraction,omitempty"`
+
+	// MemoryBudgetMB starts spilling when memory use exceeds this many MB.
+	// When both budgets are set, the lower one applies. No fixed cap when
+	// unset. Sets POLARS_OOC_MEMORY_BUDGET_MB.
+	// +kubebuilder:validation:Minimum=1
+	// +optional
+	MemoryBudgetMB *int64 `json:"memoryBudgetMB,omitempty"`
+
+	// DiskBudgetMB aborts a query when its spill files exceed this many MB.
+	// Polars defaults to 64000. Sets POLARS_OOC_DISK_BUDGET_MB.
+	// +kubebuilder:validation:Minimum=1
+	// +optional
+	DiskBudgetMB *int64 `json:"diskBudgetMB,omitempty"`
+
+	// OOMKillThresholdMB aborts a task when its memory use exceeds this many
+	// MB, so the worker reports an out-of-memory error instead of the kernel
+	// killing the whole pod. Defaults to about 95% of the container memory
+	// limit, or of the node allocatable memory without a limit. Sets
+	// POLARS_OOMKILL_THRESHOLD_MB.
+	// +kubebuilder:validation:Minimum=1
+	// +optional
+	OOMKillThresholdMB *int64 `json:"oomKillThresholdMB,omitempty"`
 }
 
 // HostMetricsSpec controls host metrics collection for the observatory
