@@ -8,9 +8,12 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/utils/ptr"
 
 	computev1 "github.com/polars-inc/polars-k8s-operator/api/v1"
 )
+
+const testSpillDir = "/mnt/spill"
 
 func polarsCluster(extra corev1.Container) *computev1.PolarsCluster {
 	extra.Name = testMainContainerName
@@ -502,4 +505,79 @@ func TestBuildWorkerPodTemplate_ServiceAccountName(t *testing.T) {
 	result, err = BuildWorkerPodTemplate(cluster)
 	g.Expect(err).NotTo(HaveOccurred())
 	g.Expect(result.Spec.ServiceAccountName).To(Equal(testExistingServiceAccountName))
+}
+
+func TestBuildWorkerPodTemplate_OutOfCoreDefaults(t *testing.T) {
+	g := NewWithT(t)
+
+	result, err := BuildWorkerPodTemplate(polarsCluster(corev1.Container{}))
+	g.Expect(err).NotTo(HaveOccurred())
+	env := result.Spec.Containers[0].Env
+
+	spillDir, ok := findEnv(env, "POLARS_OOC_SPILL_DIR")
+	g.Expect(ok).To(BeTrue())
+	g.Expect(spillDir.Value).To(Equal("/app/temporary_data/spill"))
+
+	threshold, ok := findEnv(env, "POLARS_OOMKILL_THRESHOLD_MB")
+	g.Expect(ok).To(BeTrue())
+	g.Expect(threshold.Value).To(BeEmpty())
+	g.Expect(threshold.ValueFrom.ResourceFieldRef.Resource).To(Equal("limits.memory"))
+	g.Expect(threshold.ValueFrom.ResourceFieldRef.Divisor).To(Equal(resource.MustParse("1Mi")))
+
+	for _, name := range []string{
+		"POLARS_OOC_MEMORY_BUDGET_FRACTION", "POLARS_OOC_MEMORY_BUDGET_MB", "POLARS_OOC_DISK_BUDGET_MB",
+	} {
+		_, ok := findEnv(env, name)
+		g.Expect(ok).To(BeFalse(), name)
+	}
+}
+
+func TestBuildWorkerPodTemplate_OutOfCoreOverrides(t *testing.T) {
+	g := NewWithT(t)
+
+	cluster := polarsCluster(corev1.Container{})
+	cluster.Spec.WorkerPool.OutOfCore = &computev1.OutOfCoreSpec{
+		SpillDir:             testSpillDir,
+		MemoryBudgetFraction: ptr.To(0.7),
+		MemoryBudgetMB:       ptr.To[int64](4000),
+		DiskBudgetMB:         ptr.To[int64](200000),
+		OOMKillThresholdMB:   ptr.To[int64](30000),
+	}
+
+	result, err := BuildWorkerPodTemplate(cluster)
+	g.Expect(err).NotTo(HaveOccurred())
+	env := result.Spec.Containers[0].Env
+
+	for name, want := range map[string]string{
+		"POLARS_OOC_SPILL_DIR":              testSpillDir,
+		"POLARS_OOC_MEMORY_BUDGET_FRACTION": "0.7",
+		"POLARS_OOC_MEMORY_BUDGET_MB":       "4000",
+		"POLARS_OOC_DISK_BUDGET_MB":         "200000",
+		"POLARS_OOMKILL_THRESHOLD_MB":       "30000",
+	} {
+		got, ok := findEnv(env, name)
+		g.Expect(ok).To(BeTrue(), name)
+		g.Expect(got.Value).To(Equal(want), name)
+		g.Expect(got.ValueFrom).To(BeNil(), name)
+	}
+}
+
+// Clusters that set these through the pod template before outOfCore existed
+// keep their values.
+func TestBuildWorkerPodTemplate_OutOfCoreDefaultsYieldToPodTemplateEnv(t *testing.T) {
+	g := NewWithT(t)
+
+	result, err := BuildWorkerPodTemplate(polarsCluster(corev1.Container{Env: []corev1.EnvVar{
+		{Name: "POLARS_OOC_SPILL_DIR", Value: testSpillDir},
+		{Name: "POLARS_OOMKILL_THRESHOLD_MB", Value: "30000"},
+	}}))
+	g.Expect(err).NotTo(HaveOccurred())
+	env := result.Spec.Containers[0].Env
+
+	spillDir, _ := findEnv(env, "POLARS_OOC_SPILL_DIR")
+	g.Expect(spillDir.Value).To(Equal(testSpillDir))
+
+	threshold, _ := findEnv(env, "POLARS_OOMKILL_THRESHOLD_MB")
+	g.Expect(threshold.Value).To(Equal("30000"))
+	g.Expect(threshold.ValueFrom).To(BeNil())
 }
