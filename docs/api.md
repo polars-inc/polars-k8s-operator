@@ -500,6 +500,27 @@ _Appears in:_
 | `persistentVolumeClaim` _[PersistentVolumeClaimRef](#persistentvolumeclaimref)_ | PersistentVolumeClaim persists the observatory database in an existing<br />claim instead of an emptyDir. |  | Optional: \{\} <br /> |
 
 
+#### OutOfCoreSpec
+
+
+
+OutOfCoreSpec tunes out-of-core execution on the workers. MB values count
+10^6 bytes.
+
+
+
+_Appears in:_
+- [WorkerPoolDeclaration](#workerpooldeclaration)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `spillDir` _string_ | SpillDir is the directory for spill files. Defaults to a directory on<br />the temporaryData volume; set it to use storage you mount yourself.<br />Sets POLARS_OOC_SPILL_DIR. |  | Optional: \{\} <br /> |
+| `memoryBudgetFraction` _float_ | MemoryBudgetFraction starts spilling when memory use exceeds this<br />fraction of the container memory limit, or of the node memory without<br />a limit. Polars defaults to 0.8. Sets POLARS_OOC_MEMORY_BUDGET_FRACTION. |  | Minimum: 0 <br />Optional: \{\} <br /> |
+| `memoryBudgetMB` _integer_ | MemoryBudgetMB starts spilling when memory use exceeds this many MB.<br />When both budgets are set, the lower one applies. No fixed cap when<br />unset. Sets POLARS_OOC_MEMORY_BUDGET_MB. |  | Minimum: 1 <br />Optional: \{\} <br /> |
+| `diskBudgetMB` _integer_ | DiskBudgetMB aborts a query when its spill files exceed this many MB.<br />Polars defaults to 64000. Sets POLARS_OOC_DISK_BUDGET_MB. |  | Minimum: 1 <br />Optional: \{\} <br /> |
+| `oomKillThresholdMB` _integer_ | OOMKillThresholdMB aborts a task when its memory use exceeds this many<br />MB, so the worker reports an out-of-memory error instead of the kernel<br />killing the whole pod. Defaults to about 95% of the container memory<br />limit, or of the node allocatable memory without a limit. Requires<br />Polars on-premises 0.9.0 or later. Sets POLARS_OOMKILL_THRESHOLD_MB. |  | Minimum: 1 <br />Optional: \{\} <br /> |
+
+
 #### PersistentVolumeClaimRef
 
 
@@ -917,7 +938,8 @@ _Appears in:_
 | `workersToKeep` _string array_ | WorkersToKeep names worker pods to spare when scaling down, unless<br />replicas drops below their count. The autoscaler sets it to the<br />workers running queries. |  | Optional: \{\} <br /> |
 | `heartBeatInterval` _[Duration](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.36/#duration-v1-meta)_ | HeartBeatInterval between workers and the scheduler. Defaults to 5s. |  | Optional: \{\} <br /> |
 | `shuffleData` _[ShuffleDataSpec](#shuffledataspec)_ | ShuffleData is the ephemeral storage for shuffle data. |  | ExactlyOneOf: [local sharedFilesystem s3 abs gcs] <br />Optional: \{\} <br /> |
-| `temporaryData` _[TemporaryDataSpec](#temporarydataspec)_ | TemporaryData is the ephemeral storage for temporary data used by<br />Polars (e.g. streaming data). Host-local SSD storage is recommended<br />for better performance. |  | Optional: \{\} <br /> |
+| `temporaryData` _[TemporaryDataSpec](#temporarydataspec)_ | TemporaryData is the ephemeral storage for temporary data used by<br />Polars (e.g. streaming data and out-of-core spill files, see<br />outOfCore). Host-local SSD storage is recommended for better<br />performance. |  | Optional: \{\} <br /> |
+| `outOfCore` _[OutOfCoreSpec](#outofcorespec)_ | OutOfCore tunes out-of-core execution: when memory runs low, workers<br />spill data to disk instead of running out of memory. |  | Optional: \{\} <br /> |
 | `extras` _[ExtrasSpec](#extrasspec)_ |  |  |  |
 
 

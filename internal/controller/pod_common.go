@@ -92,6 +92,10 @@ var minAutoscalingVersion = utilversion.MustParseSemantic("0.8.4")
 // releases silently ignore the old key and fall back to bare metal.
 var minTopLevelClusterModeVersion = utilversion.MustParseSemantic("0.9.0")
 
+// 0.9.0 is the first release whose Polars reads POLARS_OOMKILL_THRESHOLD_MB;
+// older releases ignore it.
+var minOOMKillThresholdVersion = utilversion.MustParseSemantic("0.9.0")
+
 // parseClusterVersion parses spec.version, returning nil when it is unset or
 // "latest".
 func parseClusterVersion(cluster *computev1.PolarsCluster) (*utilversion.Version, error) {
@@ -129,6 +133,9 @@ func clusterVersion(cluster *computev1.PolarsCluster) (*utilversion.Version, err
 	}
 	if autoscalingEnabled(cluster) && v.LessThan(minAutoscalingVersion) {
 		return nil, fmt.Errorf("spec.version %q does not support autoscaling: it requires at least %s", cluster.Spec.Version, minAutoscalingVersion)
+	}
+	if ooc := cluster.Spec.WorkerPool.OutOfCore; ooc != nil && ooc.OOMKillThresholdMB != nil && v.LessThan(minOOMKillThresholdVersion) {
+		return nil, fmt.Errorf("spec.version %q does not support workerPool.outOfCore.oomKillThresholdMB: it requires at least %s", cluster.Spec.Version, minOOMKillThresholdVersion)
 	}
 	return v, nil
 }
