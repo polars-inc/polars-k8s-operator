@@ -255,27 +255,41 @@ Releases are tag-driven. Pushing a semver tag (`vX.Y.Z`, pre-releases like
 
 1. `version` — resolves and validates the version from the tag (or `workflow_dispatch` input).
 2. `docker` — multi-arch image (amd64/arm64) pushed to Docker Hub `polarscloud/polars-k8s-operator`.
-3. `manifests` (after `docker`) — GitHub release with auto-generated notes (categorized via `.github/release.yml`) and `dist/install.yaml` attached; pre-release versions get `--prerelease`.
-4. `chart` (after `docker`) — regenerates the chart, stamps `version`/`appVersion` from the tag, and opens a PR against `polars-inc/helm-charts` (`charts/polars-k8s-operator`) authenticated as the org GitHub App; merging that PR publishes the chart via chart-releaser.
+3. `manifests` (after `docker`) — GitHub release with auto-generated notes (categorized via `.github/release.yml`) and `dist/install.yaml` plus `dist/crds.yaml` attached; pre-release versions get `--prerelease`.
+4. `chart` (after `docker`) — `make chart-package VERSION=<tag>`, then chart-releaser (`cr upload` + `cr index --push`, as the org GitHub App) publishes the package to the `polars-inc/helm-charts` Helm repository. The chart source is not copied into helm-charts.
 
 The workflow also supports `workflow_dispatch` with a dry-run option (no image
-push, draft release, chart diff logged instead of a PR).
+push, draft release, chart packaged but not published).
 
 **Key rules:**
-- `dist/` is **not tracked** (gitignored). Never hand-edit `dist/chart` — it is
-  regenerated with `--force` and edits are lost. Durable chart/manifest changes
-  belong in `config/`.
-- Regenerate locally with `make helm-generate [IMG=...]` (wraps `build-installer`
-  + `kubebuilder edit --plugins=helm/v2-alpha --force`; kubebuilder version is
-  pinned to `cliVersion` in `PROJECT`). The image passed via `IMG` becomes
-  `manager.image.repository` in the chart values; the image tag defaults to the
-  chart's `appVersion`.
-- `make build-installer`/`helm-generate` rewrite the `images:` block in
+- The Helm chart in `chart/` is **hand-written**; the kubebuilder helm plugin is
+  not used. Edit its templates and `values.yaml` directly.
+- Follow the conventions of widely used operator charts (cert-manager,
+  CloudNativePG, External Secrets, KEDA) for value names, defaults and optional
+  features; only deviate with a concrete reason.
+- `make chart VERSION=…` assembles the installable chart in `dist/chart`:
+  `chart/` plus the controller-gen output (`config/crd/bases/*.yaml`,
+  `config/rbac/role.yaml`) under `files/`, with `version`/`appVersion` set to
+  `VERSION` (default `0.0.0`). The templates read those files, so never copy
+  CRD fields or RBAC rules into a template by hand. All helm targets use
+  `dist/chart`; `chart/Chart.yaml` is never edited by the build.
+- `make build-installer` renders the release's `dist/install.yaml` (Namespace,
+  CRDs, operator) and `dist/crds.yaml` from the chart with `helm template`, the
+  way cert-manager builds its static manifests (`creator=static` drops the
+  Helm labels). The kustomize `config/default` tree is only used by `make
+  deploy` during development; changes to the manager Deployment or static RBAC
+  there need the same change in `chart/templates/`.
+- `rbac.namespaced=true` renders Roles in the release namespace and sets
+  `WATCH_NAMESPACE`, which restricts the manager's cache to that namespace.
+- `make helm-lint` lints the chart with each optional feature toggled (runs in
+  CI); add a case when adding a toggle.
+- `make deploy` rewrites the `images:` block in
   `config/manager/kustomization.yaml`; the committed default is
   `controller:latest` so default runs stay clean.
 
 **For development:**
 ```bash
+make chart                                               # Assemble the chart in dist/chart
 make helm-deploy IMG=<registry>/<project>:<tag>          # Deploy manager via Helm
 make helm-deploy IMG=$IMG HELM_EXTRA_ARGS="--set ..."    # Deploy with custom values
 make helm-status                                         # Show release status
@@ -289,7 +303,7 @@ make helm-rollback                                       # Rollback to previous 
 helm repo add polars-inc https://polars-inc.github.io/helm-charts
 helm install polars-k8s-operator polars-inc/polars-k8s-operator
 # or the YAML bundle:
-kubectl apply -f https://github.com/polars-inc/polars-k8s-operator/releases/download/vX.Y.Z/install.yaml
+kubectl apply --server-side -f https://github.com/polars-inc/polars-k8s-operator/releases/download/vX.Y.Z/install.yaml
 ```
 
 ## References

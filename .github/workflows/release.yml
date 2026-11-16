@@ -10,7 +10,7 @@ on:
         description: 'Version to use for a dry run'
         default: '0.1.0'
       dry-run:
-        description: 'Dry run: build image without pushing, skip the GitHub release, print chart diff instead of opening a PR'
+        description: 'Dry run: build image without pushing, skip the GitHub release, package the chart without publishing it'
         type: boolean
         default: false
 
@@ -83,8 +83,8 @@ jobs:
 
   manifests:
     permissions:
-      contents: write # create the GitHub release and upload install.yaml
-    name: Create GitHub release with install.yaml
+      contents: write # create the GitHub release and upload the installer manifests
+    name: Create GitHub release with installer manifests
     runs-on: ubuntu-latest
     needs: [version, docker]
     steps:
@@ -101,13 +101,15 @@ jobs:
       - name: Build installer manifests
         env:
           VERSION: ${{ needs.version.outputs.version }}
-        run: make build-installer IMG="polarscloud/polars-k8s-operator:$VERSION"
+        run: make build-installer VERSION="$VERSION"
 
-      - name: Upload install.yaml as workflow artifact
+      - name: Upload installer manifests as workflow artifact
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: install.yaml
-          path: dist/install.yaml
+          name: installer-manifests
+          path: |
+            dist/install.yaml
+            dist/crds.yaml
 
       - name: Create GitHub release
         env:
@@ -121,7 +123,7 @@ jobs:
           [ "$PRERELEASE" = "true" ] && FLAGS="$FLAGS --prerelease"
           if [ "$DRY_RUN" = "true" ]; then
             echo "Dry run; would create release $TAG (flags:$FLAGS) with:"
-            ls -l dist/install.yaml
+            ls -l dist/install.yaml dist/crds.yaml
             exit 0
           fi
           gh release create "$TAG" \
@@ -129,13 +131,13 @@ jobs:
             --verify-tag \
             --generate-notes \
             $FLAGS \
-            dist/install.yaml \
-          || gh release upload "$TAG" dist/install.yaml --clobber --repo "$GITHUB_REPOSITORY"
+            dist/install.yaml dist/crds.yaml \
+          || gh release upload "$TAG" dist/install.yaml dist/crds.yaml --clobber --repo "$GITHUB_REPOSITORY"
 
   chart:
     permissions:
       contents: read
-    name: PR chart to polars-inc/helm-charts
+    name: Publish chart to polars-inc/helm-charts
     runs-on: ubuntu-latest
     needs: [version, docker]
     steps:
@@ -149,17 +151,22 @@ jobs:
         with:
           go-version-file: go.mod
 
-      - name: Generate Helm chart
+      - name: Package chart
         env:
           VERSION: ${{ needs.version.outputs.version }}
         run: |
-          make helm-generate IMG="polarscloud/polars-k8s-operator:$VERSION"
-          yq -i '.version = strenv(VERSION) | .appVersion = strenv(VERSION)' dist/chart/Chart.yaml
+          make chart-package VERSION="$VERSION"
+          ls -l dist/packages
 
-      - name: Install Helm
-        run: make install-helm
+      - name: Install chart-releaser
+        if: ${{ inputs.dry-run != true }}
+        uses: helm/chart-releaser-action@92c6b97fa9f664492a2592e0d1d80bc6bf378957 # v1.9.0
+        with:
+          version: v1.10.1
+          install_only: true
 
       - name: Mint helm-charts token
+        if: ${{ inputs.dry-run != true }}
         id: app-token
         uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
         with:
@@ -168,49 +175,34 @@ jobs:
           owner: polars-inc
           repositories: helm-charts
 
+      # cr index commits to the gh-pages branch of this checkout.
       - name: Clone polars-inc/helm-charts
+        if: ${{ inputs.dry-run != true }}
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           repository: polars-inc/helm-charts
           token: ${{ steps.app-token.outputs.token }}
           path: helm-charts
+          fetch-depth: 0
           persist-credentials: true
 
-      - name: Sync chart
-        run: |
-          rsync -a --delete dist/chart/ helm-charts/charts/polars-k8s-operator/
-          helm lint helm-charts/charts/polars-k8s-operator
-
-      - name: Open pull request
+      # Same flow as chart-releaser-action in polars-inc/helm-charts: the package
+      # becomes a GitHub release there, and gh-pages/index.yaml (the Helm repo
+      # users add) gets an entry for it.
+      - name: Publish chart
+        if: ${{ inputs.dry-run != true }}
         env:
+          CR_TOKEN: ${{ steps.app-token.outputs.token }}
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
           APP_SLUG: ${{ steps.app-token.outputs.app-slug }}
-          VERSION: ${{ needs.version.outputs.version }}
-          DRY_RUN: ${{ inputs.dry-run }}
+          PRERELEASE: ${{ needs.version.outputs.prerelease }}
         working-directory: helm-charts
         run: |
-          if [ -z "$(git status --porcelain charts/polars-k8s-operator)" ]; then
-            echo "Chart unchanged; nothing to release."
-            exit 0
-          fi
-          if [ "$DRY_RUN" = "true" ]; then
-            echo "Dry run; would open a PR with these changes:"
-            git add -N charts/polars-k8s-operator
-            git diff charts/polars-k8s-operator
-            exit 0
-          fi
-          BRANCH="release-polars-k8s-operator-$VERSION"
-          TITLE="Release polars-k8s-operator Chart $VERSION App $VERSION"
           BOT_ID="$(gh api "/users/${APP_SLUG}[bot]" --jq .id)"
           git config user.name "${APP_SLUG}[bot]"
           git config user.email "${BOT_ID}+${APP_SLUG}[bot]@users.noreply.github.com"
-          git checkout -b "$BRANCH"
-          git add charts/polars-k8s-operator
-          git commit -m "$TITLE"
-          git push -f origin "$BRANCH"
-          gh pr create \
-            --repo polars-inc/helm-charts \
-            --head "$BRANCH" \
-            --title "$TITLE" \
-            --body "Automated chart release from polars-inc/polars-k8s-operator (v$VERSION)." \
-          || gh pr view "$BRANCH" --repo polars-inc/helm-charts
+          cr upload --owner polars-inc --git-repo helm-charts \
+            --package-path ../dist/packages \
+            --skip-existing --make-release-latest=false --pre-release="$PRERELEASE"
+          cr index --owner polars-inc --git-repo helm-charts \
+            --package-path ../dist/packages --push

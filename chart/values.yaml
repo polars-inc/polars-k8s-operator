@@ -1,0 +1,116 @@
+# -- Override the chart name used in resource names and labels.
+nameOverride: ""
+# -- Override the full resource name prefix (defaults to <release>-<chart>, or <release> when it contains the chart name).
+fullnameOverride: ""
+
+replicaCount: 1
+
+image:
+  repository: polarscloud/polars-k8s-operator
+  # -- Defaults to the chart's appVersion.
+  tag: ""
+  pullPolicy: IfNotPresent
+
+imagePullSecrets: []
+
+# -- Extra arguments for the operator, e.g. ["--zap-log-level=debug"].
+extraArgs: []
+
+# -- Extra environment variables for the operator container.
+extraEnv: []
+
+# -- Extra volumes for the operator pod.
+extraVolumes: []
+
+# -- Extra volume mounts for the operator container.
+extraVolumeMounts: []
+
+serviceAccount:
+  # -- Create the operator's ServiceAccount.
+  create: true
+  # -- Name of the ServiceAccount to use. Defaults to <fullname>-controller-manager.
+  name: ""
+  annotations: {}
+  labels: {}
+
+rbac:
+  # -- Create the operator's Roles/ClusterRoles and bindings.
+  create: true
+  # -- false: ClusterRole/ClusterRoleBinding, and the operator reconciles
+  # PolarsClusters in every namespace.
+  # true: Role/RoleBinding in the release namespace, and the operator only
+  # reconciles PolarsClusters there. The CRD and the ClusterRoles below still
+  # need cluster-scoped install rights, and their names get the release
+  # namespace appended so releases in different namespaces don't collide.
+  namespaced: false
+  # -- Aggregate PolarsCluster permissions into the default view, edit and admin ClusterRoles.
+  aggregateClusterRoles: true
+
+crds:
+  # -- Install the PolarsCluster CRD with the chart.
+  enabled: true
+  # -- Keep the CRD (and with it every PolarsCluster) when the release is uninstalled.
+  keep: true
+
+metrics:
+  # -- Serve operator metrics on /metrics.
+  enabled: true
+  port: 8080
+  # -- Serve metrics over HTTPS with authn/authz through TokenReview and
+  # SubjectAccessReview. Callers then need the <fullname>-metrics-reader ClusterRole.
+  secure: false
+
+serviceMonitor:
+  # -- Create a Prometheus Operator ServiceMonitor. Requires metrics.enabled and metrics.secure=false.
+  enabled: false
+  additionalLabels: {}
+  interval: ""
+  scrapeTimeout: ""
+  honorLabels: false
+  relabelings: []
+  metricRelabelings: []
+
+podDisruptionBudget:
+  # -- Only useful with replicaCount > 1: with a single replica it blocks node drains.
+  enabled: false
+  minAvailable: 1
+  # maxUnavailable: 1
+
+deploymentAnnotations: {}
+podAnnotations: {}
+podLabels: {}
+
+podSecurityContext:
+  runAsNonRoot: true
+  seccompProfile:
+    type: RuntimeDefault
+
+securityContext:
+  allowPrivilegeEscalation: false
+  capabilities:
+    drop:
+      - ALL
+  readOnlyRootFilesystem: true
+
+resources:
+  limits:
+    cpu: 500m
+    memory: 128Mi
+  requests:
+    cpu: 10m
+    memory: 64Mi
+
+nodeSelector: {}
+tolerations: []
+affinity: {}
+topologySpreadConstraints: []
+priorityClassName: ""
+strategy: {}
+terminationGracePeriodSeconds: 10
+
+# -- Extra manifests to deploy with the release, as objects or templated strings.
+extraObjects: []
+
+# Used by the release pipeline to render the static install.yaml: "static"
+# drops the Helm-specific labels. Leave it at "helm".
+creator: "helm"

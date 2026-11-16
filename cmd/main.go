@@ -13,6 +13,7 @@ import (
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 	"sigs.k8s.io/controller-runtime/pkg/metrics/filters"
@@ -140,8 +141,16 @@ func main() {
 		metricsServerOptions.KeyName = metricsCertKey
 	}
 
+	// The Helm chart sets WATCH_NAMESPACE when it grants a namespaced Role instead of a ClusterRole.
+	var cacheOptions cache.Options
+	if watchNamespace := os.Getenv("WATCH_NAMESPACE"); watchNamespace != "" {
+		setupLog.Info("Watching a single namespace", "namespace", watchNamespace)
+		cacheOptions.DefaultNamespaces = map[string]cache.Config{watchNamespace: {}}
+	}
+
 	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{
 		Scheme:                 scheme,
+		Cache:                  cacheOptions,
 		Metrics:                metricsServerOptions,
 		WebhookServer:          webhookServer,
 		HealthProbeBindAddress: probeAddr,

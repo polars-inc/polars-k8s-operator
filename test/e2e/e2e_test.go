@@ -29,14 +29,8 @@ const namespace = "polars-k8s-operator-system"
 
 const clusterNamespace = "polars-k8s-operator-e2e-clusters"
 
-// serviceAccountName created for the project
-const serviceAccountName = "polars-k8s-operator-controller-manager"
-
 // metricsServiceName is the name of the metrics service of the project
 const metricsServiceName = "polars-k8s-operator-controller-manager-metrics-service"
-
-// metricsRoleBindingName is the name of the RBAC that will be created to allow get the metrics data
-const metricsRoleBindingName = "polars-k8s-operator-metrics-binding"
 
 var _ = Describe("Manager", Ordered, func() {
 	var controllerPodName string
@@ -61,15 +55,10 @@ var _ = Describe("Manager", Ordered, func() {
 		_, err = utils.Run(cmd)
 		Expect(err).NotTo(HaveOccurred(), "Failed to create cluster namespace")
 
-		By("installing CRDs")
-		cmd = exec.Command("make", "install")
+		By("installing the Helm chart")
+		cmd = exec.Command("make", "helm-deploy", fmt.Sprintf("IMG=%s", managerImage), "HELM_NAMESPACE="+namespace)
 		_, err = utils.Run(cmd)
-		Expect(err).NotTo(HaveOccurred(), "Failed to install CRDs")
-
-		By("deploying the controller-manager")
-		cmd = exec.Command("make", "deploy", fmt.Sprintf("IMG=%s", managerImage))
-		_, err = utils.Run(cmd)
-		Expect(err).NotTo(HaveOccurred(), "Failed to deploy the controller-manager")
+		Expect(err).NotTo(HaveOccurred(), "Failed to install the Helm chart")
 	})
 
 	// After all tests have been executed, clean up by undeploying the controller, uninstalling CRDs,
@@ -79,11 +68,11 @@ var _ = Describe("Manager", Ordered, func() {
 		cmd := exec.Command("kubectl", "delete", "pod", "curl-metrics", "-n", namespace)
 		_, _ = utils.Run(cmd)
 
-		By("undeploying the controller-manager")
-		cmd = exec.Command("make", "undeploy")
+		By("uninstalling the Helm chart")
+		cmd = exec.Command("make", "helm-uninstall", "HELM_NAMESPACE="+namespace)
 		_, _ = utils.Run(cmd)
 
-		By("uninstalling CRDs")
+		By("uninstalling the CRDs the chart keeps")
 		cmd = exec.Command("make", "uninstall")
 		_, _ = utils.Run(cmd)
 
@@ -151,23 +140,10 @@ var _ = Describe("Manager", Ordered, func() {
 		})
 
 		It("should ensure the metrics endpoint is serving metrics", func() {
-			By("creating a ClusterRoleBinding for the service account to allow access to metrics")
-			cmd := exec.Command("kubectl", "create", "clusterrolebinding", metricsRoleBindingName,
-				"--clusterrole=polars-k8s-operator-metrics-reader",
-				fmt.Sprintf("--serviceaccount=%s:%s", namespace, serviceAccountName),
-			)
-			_, err := utils.Run(cmd)
-			Expect(err).NotTo(HaveOccurred(), "Failed to create ClusterRoleBinding")
-
 			By("validating that the metrics service is available")
-			cmd = exec.Command("kubectl", "get", "service", metricsServiceName, "-n", namespace)
-			_, err = utils.Run(cmd)
+			cmd := exec.Command("kubectl", "get", "service", metricsServiceName, "-n", namespace)
+			_, err := utils.Run(cmd)
 			Expect(err).NotTo(HaveOccurred(), "Metrics service should exist")
-
-			By("getting the service account token")
-			token, err := serviceAccountToken()
-			Expect(err).NotTo(HaveOccurred())
-			Expect(token).NotTo(BeEmpty())
 
 			By("ensuring the controller pod is ready")
 			verifyControllerPodReady := func(g Gomega) {
@@ -203,7 +179,7 @@ var _ = Describe("Manager", Ordered, func() {
 							"image": "curlimages/curl:latest",
 							"command": ["/bin/sh", "-c"],
 							"args": [
-								"for i in $(seq 1 30); do curl -v -k -H 'Authorization: Bearer %s' https://%s.%s.svc.cluster.local:8443/metrics && exit 0 || sleep 2; done; exit 1"
+								"for i in $(seq 1 30); do curl -v http://%s.%s.svc.cluster.local:8080/metrics && exit 0 || sleep 2; done; exit 1"
 							],
 							"securityContext": {
 								"readOnlyRootFilesystem": true,
@@ -217,10 +193,9 @@ var _ = Describe("Manager", Ordered, func() {
 									"type": "RuntimeDefault"
 								}
 							}
-						}],
-						"serviceAccountName": "%s"
+						}]
 					}
-				}`, token, metricsServiceName, namespace, serviceAccountName))
+				}`, metricsServiceName, namespace))
 			_, err = utils.Run(cmd)
 			Expect(err).NotTo(HaveOccurred(), "Failed to create curl-metrics pod")
 
@@ -723,6 +698,66 @@ var _ = Describe("Manager", Ordered, func() {
 			itRecreatesSchedulerOnTemplateChange(realImageSpecConfig)
 			itAutoscalesForQueries(realImageSpecConfig)
 		})
+
+		// Last: it replaces the cluster-scoped release that every spec above runs against.
+		Context("Namespaced RBAC", func() {
+			BeforeAll(func() {
+				By("uninstalling the cluster-scoped release")
+				cmd := exec.Command("make", "helm-uninstall", "HELM_NAMESPACE="+namespace)
+				_, err := utils.Run(cmd)
+				Expect(err).NotTo(HaveOccurred())
+
+				// The manager namespace enforces the restricted Pod Security Standard, which
+				// the busybox PolarsClusters don't meet, so install into the clusters' namespace.
+				// The first release kept the CRD, so this one leaves it alone.
+				By("installing the chart with rbac.namespaced=true")
+				cmd = exec.Command("make", "helm-deploy", fmt.Sprintf("IMG=%s", managerImage),
+					"HELM_NAMESPACE="+clusterNamespace,
+					"HELM_EXTRA_ARGS=--set rbac.namespaced=true --set crds.enabled=false")
+				_, err = utils.Run(cmd)
+				Expect(err).NotTo(HaveOccurred())
+			})
+
+			AfterAll(func() {
+				By("deleting the namespaced-RBAC PolarsCluster")
+				cmd := exec.Command("kubectl", "delete", "polarscluster", namespacedRBACClusterName,
+					"-n", clusterNamespace, "--ignore-not-found")
+				_, _ = utils.Run(cmd)
+
+				By("uninstalling the namespaced release")
+				cmd = exec.Command("make", "helm-uninstall", "HELM_NAMESPACE="+clusterNamespace)
+				_, _ = utils.Run(cmd)
+			})
+
+			It("should reconcile an autoscaling PolarsCluster in its own namespace with a namespaced Role", func() {
+				Expect(kubectlApply(namespacedRBACPolarsClusterManifest(clusterNamespace, namespacedRBACClusterName))).
+					To(Succeed())
+
+				By("creating the scheduler's scaling Role, which needs the manager to hold its rules in this namespace")
+				Eventually(func(g Gomega) {
+					cmd := exec.Command("kubectl", "get", "role", namespacedRBACClusterName+"-scheduler-scaling",
+						"-n", clusterNamespace, "-o", "jsonpath={.metadata.ownerReferences[0].name}")
+					output, err := utils.Run(cmd)
+					g.Expect(err).NotTo(HaveOccurred())
+					g.Expect(output).To(Equal(namespacedRBACClusterName))
+				}).Should(Succeed())
+
+				By("readying the scheduler pod")
+				Eventually(func(g Gomega) {
+					ready, err := podJSONPath(clusterNamespace, schedulerPodNameForCluster(namespacedRBACClusterName),
+						"{.status.conditions[?(@.type=='Ready')].status}")
+					g.Expect(err).NotTo(HaveOccurred())
+					g.Expect(ready).To(Equal("True"))
+				}).Should(Succeed())
+
+				By("checking the manager hit no Forbidden errors")
+				cmd := exec.Command("kubectl", "logs", "deployment/polars-k8s-operator-controller-manager",
+					"-n", clusterNamespace)
+				logs, err := utils.Run(cmd)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(strings.ToLower(logs)).NotTo(ContainSubstring("forbidden"))
+			})
+		})
 	})
 })
 
@@ -1112,6 +1147,20 @@ const composedDistTag = "latest"
 const serviceAccountE2EClusterName = "e2e-cluster-serviceaccount"
 const routeE2EClusterName = "e2e-cluster-routes"
 const existingWorkerServiceAccountName = "e2e-existing-worker-sa"
+const namespacedRBACClusterName = "e2e-cluster-namespaced-rbac"
+
+// namespacedRBACPolarsClusterManifest enables autoscaling so the operator also
+// creates the scheduler's ServiceAccount, Role and RoleBinding. Version
+// "latest" clears the autoscaling version minimum, which the CRD's default
+// version is below.
+func namespacedRBACPolarsClusterManifest(ns, name string) string {
+	cluster := busyboxPolarsCluster(ns, name, 0)
+	cluster.Spec.Version = computev1.LatestVersion
+	cluster.Spec.WorkerPool.MinReplicas = ptr.To[int32](0)
+	cluster.Spec.WorkerPool.MaxReplicas = ptr.To[int32](1)
+	cluster.Spec.WorkersPerQuery = &computev1.WorkersPerQuerySpec{Default: ptr.To[int32](1)}
+	return mustMarshalManifest(cluster)
+}
 
 func composedPolarsCluster(ns, name string, imageVolume bool) *computev1.PolarsCluster {
 	cluster := busyboxPolarsCluster(ns, name, 1)
@@ -1462,58 +1511,9 @@ func podNamesForSelector(ns, selector string) ([]string, error) {
 	return strings.Fields(output), nil
 }
 
-// serviceAccountToken returns a token for the specified service account in the given namespace.
-// It uses the Kubernetes TokenRequest API to generate a token by directly sending a request
-// and parsing the resulting token from the API response.
-func serviceAccountToken() (string, error) {
-	const tokenRequestRawString = `{
-		"apiVersion": "authentication.k8s.io/v1",
-		"kind": "TokenRequest"
-	}`
-
-	By("creating temporary file to store the token request")
-	secretName := fmt.Sprintf("%s-token-request", serviceAccountName)
-	tokenRequestFile := filepath.Join("/tmp", secretName)
-	err := os.WriteFile(tokenRequestFile, []byte(tokenRequestRawString), os.FileMode(0o644))
-	if err != nil {
-		return "", err
-	}
-
-	var out string
-	verifyTokenCreation := func(g Gomega) {
-		By("executing kubectl command to create the token")
-		cmd := exec.Command("kubectl", "create", "--raw", fmt.Sprintf(
-			"/api/v1/namespaces/%s/serviceaccounts/%s/token",
-			namespace,
-			serviceAccountName,
-		), "-f", tokenRequestFile)
-
-		output, err := cmd.CombinedOutput()
-		g.Expect(err).NotTo(HaveOccurred())
-
-		By("parsing the JSON output to extract the token")
-		var token tokenRequest
-		err = json.Unmarshal(output, &token)
-		g.Expect(err).NotTo(HaveOccurred())
-
-		out = token.Status.Token
-	}
-	Eventually(verifyTokenCreation).Should(Succeed())
-
-	return out, err
-}
-
 // getMetricsOutput retrieves and returns the logs from the curl pod used to access the metrics endpoint.
 func getMetricsOutput() (string, error) {
 	By("getting the curl-metrics logs")
 	cmd := exec.Command("kubectl", "logs", "curl-metrics", "-n", namespace)
 	return utils.Run(cmd)
-}
-
-// tokenRequest is a simplified representation of the Kubernetes TokenRequest API response,
-// containing only the token field that we need to extract.
-type tokenRequest struct {
-	Status struct {
-		Token string `json:"token"`
-	} `json:"status"`
 }

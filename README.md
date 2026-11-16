@@ -25,11 +25,25 @@ helm repo add polars-inc https://polars-inc.github.io/helm-charts
 helm install polars-k8s-operator polars-inc/polars-k8s-operator
 ```
 
+By default the operator gets a ClusterRole and reconciles PolarsClusters in every
+namespace. With `--set rbac.namespaced=true` it gets a Role in the release
+namespace instead and only reconciles PolarsClusters there. Installing the CRD
+and the chart's ClusterRoles still needs cluster-scoped rights.
+
+Metrics are served over plain HTTP on port 8080; `serviceMonitor.enabled=true`
+creates a Prometheus Operator ServiceMonitor for them. See
+[`chart/values.yaml`](chart/values.yaml) for every option.
+
 ### Using the YAML bundle
 
 ```sh
-kubectl apply -f https://github.com/polars-inc/polars-k8s-operator/releases/download/vX.Y.Z/install.yaml
+kubectl apply --server-side -f https://github.com/polars-inc/polars-k8s-operator/releases/download/vX.Y.Z/install.yaml
 ```
+
+`install.yaml` is the Helm chart rendered with its default values, plus the
+`polars-k8s-operator-system` Namespace. The CRD is too large for client-side
+apply, hence `--server-side`. Each release also ships `crds.yaml` with only the
+CRD.
 
 ### Create a PolarsCluster
 
@@ -112,15 +126,15 @@ workflow:
 
 - `docker` pushes the multi-arch image to [`polarscloud/polars-k8s-operator`](https://hub.docker.com/r/polarscloud/polars-k8s-operator) on Docker Hub.
 - `manifests` (after `docker`) creates a GitHub release with generated notes and the installer bundle attached (used by the YAML bundle install above).
-- `chart` (after `docker`) opens a PR against [polars-inc/helm-charts](https://github.com/polars-inc/helm-charts) with the regenerated chart; merging it publishes the chart used by the Helm install above.
+- `chart` (after `docker`) packages the chart from `chart/` and publishes it to the [polars-inc/helm-charts](https://github.com/polars-inc/helm-charts) Helm repository used by the Helm install above, with chart-releaser: the package becomes a GitHub release there and its `gh-pages` index gets an entry. The chart's source lives only in this repo.
 
 The workflow can also be run manually via `workflow_dispatch`, with a dry-run
-option that skips the image push, drafts the release, and logs the chart diff
-instead of opening a PR.
+option that skips the image push, drafts the release, and packages the chart
+without publishing it.
 
-**NOTE:** The chart and installer bundle are generated from `config/` (`make
-helm-generate` and `make build-installer`). `dist/` is not tracked in git.
-Durable chart changes must be made in `config/`, not in `dist/chart`.
+**NOTE:** The Helm chart in `chart/` is maintained by hand. `make chart`
+assembles it with the generated CRDs and RBAC rules in `dist/chart`, and `make
+build-installer` renders the installer bundle from it; `dist/` is not tracked.
 
 ## License
 
