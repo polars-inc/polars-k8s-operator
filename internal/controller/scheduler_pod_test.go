@@ -623,6 +623,36 @@ func TestBuildSchedulerPodTemplate_HostMetricsDisabled(t *testing.T) {
 	g.Expect(hostMetrics.Value).To(Equal("false"))
 }
 
+func TestBuildSchedulerPodTemplate_ClusterModeKeyByVersion(t *testing.T) {
+	const (
+		topLevel    = "PC_CUBLET__cluster_mode"
+		observatory = "PC_CUBLET__observatory__cluster_mode"
+	)
+	for _, tc := range []struct {
+		version, want, absent string
+	}{
+		{version: "0.8.7", want: observatory, absent: topLevel},
+		{version: "0.9.0", want: topLevel, absent: observatory},
+		{version: computev1.LatestVersion, want: topLevel, absent: observatory},
+	} {
+		t.Run(tc.version, func(t *testing.T) {
+			g := NewWithT(t)
+
+			cluster := schedulerCluster(corev1.Container{})
+			cluster.Spec.Version = tc.version
+			result, err := BuildSchedulerPodTemplate(cluster)
+			g.Expect(err).NotTo(HaveOccurred())
+
+			env := result.Spec.Containers[0].Env
+			mode, ok := findEnv(env, tc.want)
+			g.Expect(ok).To(BeTrue())
+			g.Expect(mode.Value).To(Equal("kubernetes"))
+			_, ok = findEnv(env, tc.absent)
+			g.Expect(ok).To(BeFalse())
+		})
+	}
+}
+
 func TestBuildSchedulerPodTemplate_LogLevelDefault(t *testing.T) {
 	g := NewWithT(t)
 
