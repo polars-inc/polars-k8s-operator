@@ -81,7 +81,11 @@ func computedSchedulerPodSpec(cluster *computev1.PolarsCluster, containerName st
 	observatory.Bool("enabled", true)
 	observatory.Int("max_metrics_bytes_total", observatoryMaxMetricsBytes(cluster))
 	observatory.String("database_path", observatoryDataMountPath+"/observatory.db")
-	observatory.String("cluster_mode", "kubernetes")
+	if versionAtLeast(cluster, minTopLevelClusterModeVersion) {
+		cublet.String("cluster_mode", "kubernetes")
+	} else {
+		observatory.String("cluster_mode", "kubernetes")
+	}
 	observatory.Section("rest_api").Bool("enabled", true)
 
 	monitoring := cublet.Section("monitoring")

@@ -88,16 +88,38 @@ var minCloudLicenseVersion = utilversion.MustParseSemantic("0.8.0")
 // maxReplicas as unbounded.
 var minAutoscalingVersion = utilversion.MustParseSemantic("0.8.4")
 
-// clusterVersion parses spec.version and enforces the supported minimum,
-// returning nil when the version is unset. The schema validates the format
-// at admission; this also covers objects admitted under an older schema.
-func clusterVersion(cluster *computev1.PolarsCluster) (*utilversion.Version, error) {
+// 0.9.0 moved cluster_mode from [observatory] to the top level. Newer
+// releases silently ignore the old key and fall back to bare metal.
+var minTopLevelClusterModeVersion = utilversion.MustParseSemantic("0.9.0")
+
+// parseClusterVersion parses spec.version, returning nil when it is unset or
+// "latest".
+func parseClusterVersion(cluster *computev1.PolarsCluster) (*utilversion.Version, error) {
 	if cluster.Spec.Version == "" || cluster.Spec.Version == computev1.LatestVersion {
 		return nil, nil
 	}
 	v, err := utilversion.ParseSemantic(cluster.Spec.Version)
 	if err != nil {
 		return nil, fmt.Errorf("spec.version %q is not a semantic version: %w", cluster.Spec.Version, err)
+	}
+	return v, nil
+}
+
+// versionAtLeast reports whether spec.version is at least minVersion. An
+// unset or "latest" version counts as the newest release. An unparseable one
+// also returns true; the reconciler rejects it before building pods.
+func versionAtLeast(cluster *computev1.PolarsCluster, minVersion *utilversion.Version) bool {
+	v, err := parseClusterVersion(cluster)
+	return err != nil || v == nil || v.AtLeast(minVersion)
+}
+
+// clusterVersion parses spec.version and enforces the supported minimum,
+// returning nil when the version is unset. The schema validates the format
+// at admission; this also covers objects admitted under an older schema.
+func clusterVersion(cluster *computev1.PolarsCluster) (*utilversion.Version, error) {
+	v, err := parseClusterVersion(cluster)
+	if v == nil || err != nil {
+		return nil, err
 	}
 	if v.LessThan(minSupportedVersion) {
 		return nil, fmt.Errorf("spec.version %q is not supported: this operator requires at least %s", cluster.Spec.Version, minSupportedVersion)
