@@ -1,0 +1,18 @@
+{{- if .Values.metrics.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "polars-k8s-operator.resourceName" (dict "suffix" "controller-manager-metrics-service" "context" $) }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "polars-k8s-operator.labels" . | nindent 4 }}
+    control-plane: controller-manager
+spec:
+  ports:
+  - name: {{ ternary "https" "http" .Values.metrics.secure }}
+    port: {{ .Values.metrics.port }}
+    protocol: TCP
+    targetPort: {{ .Values.metrics.port }}
+  selector:
+    {{- include "polars-k8s-operator.selectorLabels" . | nindent 4 }}
+{{- end }}

@@ -1,0 +1,9 @@
+{{ .Chart.Name }} is installed in namespace {{ .Release.Namespace }}.
+{{- if .Values.rbac.namespaced }}
+
+It only reconciles PolarsClusters in namespace {{ .Release.Namespace }}.
+{{- end }}
+
+Check that the operator is running:
+
+  kubectl get pods -n {{ .Release.Namespace }} -l control-plane=controller-manager

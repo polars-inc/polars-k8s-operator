@@ -157,16 +157,45 @@ docker-buildx: ## Build and push docker image for the manager for cross-platform
 	- $(CONTAINER_TOOL) buildx rm polars-k8s-operator-builder
 	rm Dockerfile.cross
 
-.PHONY: build-installer
-build-installer: manifests generate kustomize ## Generate a consolidated YAML with CRDs and deployment.
-	mkdir -p dist
-	cd config/manager && "$(KUSTOMIZE)" edit set image controller=${IMG}
-	"$(KUSTOMIZE)" build config/default > dist/install.yaml
+## Chart version and appVersion (and so the default image tag); releases set it from the git tag.
+VERSION ?= 0.0.0
+CHART_BUILD_DIR = dist/chart
 
-.PHONY: helm-generate
-helm-generate: build-installer kubebuilder ## Generate the Helm chart in dist/chart. Specify an image with IMG (modifies config/manager/kustomization.yaml).
-	rm -rf dist/chart
-	$(KUBEBUILDER) edit --plugins=helm/v2-alpha --force
+# Static manifests are rendered from the Helm chart like cert-manager's: pinned
+# Kubernetes and API versions so the output doesn't depend on a cluster, and
+# creator=static to drop the Helm-specific labels.
+STATIC_MANIFEST_ARGS = polars-k8s-operator $(CHART_BUILD_DIR) --namespace=polars-k8s-operator-system \
+	--kube-version="$(ENVTEST_K8S_VERSION).0" --api-versions="" --set="creator=static"
+
+.PHONY: build-installer
+build-installer: chart install-helm ## Render dist/install.yaml (Namespace, CRDs, operator) and dist/crds.yaml from the Helm chart at VERSION.
+	@# The sed command removes the first line but only if it matches "---", which helm adds
+	$(HELM) template $(STATIC_MANIFEST_ARGS) --set="crds.keep=false" --show-only=templates/crds.yaml \
+		| sed -e "1{/^---$$/d;}" > dist/crds.yaml
+	{ cat config/static/namespace.yaml; echo "---"; cat dist/crds.yaml; echo "---"; \
+		$(HELM) template $(STATIC_MANIFEST_ARGS) --set="crds.enabled=false" | sed -e "1{/^---$$/d;}"; } > dist/install.yaml
+
+.PHONY: chart
+chart: manifests ## Assemble the Helm chart at VERSION in dist/chart: chart/ plus the generated CRDs and manager RBAC rules.
+	rm -rf $(CHART_BUILD_DIR)
+	mkdir -p $(CHART_BUILD_DIR)/files/crds
+	cp -R chart/. $(CHART_BUILD_DIR)/
+	cp config/crd/bases/*.yaml $(CHART_BUILD_DIR)/files/crds/
+	cp config/rbac/role.yaml $(CHART_BUILD_DIR)/files/manager-role.yaml
+	sed -e 's/^version: .*/version: $(VERSION)/' -e 's/^appVersion: .*/appVersion: "$(VERSION)"/' \
+		chart/Chart.yaml > $(CHART_BUILD_DIR)/Chart.yaml
+
+.PHONY: helm-lint
+helm-lint: chart install-helm ## Lint the Helm chart with each optional feature toggled.
+	$(HELM) lint --strict $(CHART_BUILD_DIR)
+	$(HELM) lint --strict $(CHART_BUILD_DIR) --set rbac.namespaced=true
+	$(HELM) lint --strict $(CHART_BUILD_DIR) --set metrics.secure=true --set rbac.aggregateClusterRoles=false
+	$(HELM) lint --strict $(CHART_BUILD_DIR) --set serviceMonitor.enabled=true --set podDisruptionBudget.enabled=true
+	$(HELM) lint --strict $(CHART_BUILD_DIR) --set rbac.create=false --set serviceAccount.create=false --set crds.enabled=false
+
+.PHONY: chart-package
+chart-package: helm-lint ## Lint and package the Helm chart at VERSION into dist/packages.
+	$(HELM) package $(CHART_BUILD_DIR) --destination dist/packages
 
 ##@ Deployment
 
@@ -207,17 +236,11 @@ KUSTOMIZE ?= $(LOCALBIN)/kustomize
 CONTROLLER_GEN ?= $(LOCALBIN)/controller-gen
 ENVTEST ?= $(LOCALBIN)/setup-envtest
 GOLANGCI_LINT = $(LOCALBIN)/golangci-lint
-KUBEBUILDER ?= $(LOCALBIN)/kubebuilder
 CRD_REF_DOCS ?= $(LOCALBIN)/crd-ref-docs
 
 ## Tool Versions
 KUSTOMIZE_VERSION ?= v5.8.1
 CONTROLLER_TOOLS_VERSION ?= v0.21.0
-
-#KUBEBUILDER_VERSION is derived from cliVersion in the PROJECT file so chart generation stays reproducible
-KUBEBUILDER_VERSION ?= $(shell v=$$(sed -n 's/^cliVersion: *//p' PROJECT); \
-  [ -n "$$v" ] || { echo "Set KUBEBUILDER_VERSION manually (no cliVersion in PROJECT)" >&2; exit 1; }; \
-  printf 'v%s\n' "$$v")
 
 #ENVTEST_VERSION is the controller-runtime version to use for setup-envtest, derived from go.mod
 ENVTEST_VERSION ?= $(shell v='$(call gomodver,sigs.k8s.io/controller-runtime)'; \
@@ -254,11 +277,6 @@ setup-envtest: envtest ## Download the binaries required for ENVTEST in the loca
 envtest: $(ENVTEST) ## Download setup-envtest locally if necessary.
 $(ENVTEST): $(LOCALBIN)
 	$(call go-install-tool,$(ENVTEST),sigs.k8s.io/controller-runtime/tools/setup-envtest,$(ENVTEST_VERSION))
-
-.PHONY: kubebuilder
-kubebuilder: $(KUBEBUILDER) ## Download kubebuilder locally if necessary.
-$(KUBEBUILDER): $(LOCALBIN)
-	$(call go-install-tool,$(KUBEBUILDER),sigs.k8s.io/kubebuilder/v4,$(KUBEBUILDER_VERSION))
 
 .PHONY: golangci-lint
 golangci-lint: $(GOLANGCI_LINT) ## Download golangci-lint locally if necessary.
@@ -300,13 +318,16 @@ endef
 ## Helm binary to use for deploying the chart
 HELM ?= helm
 ## Namespace to deploy the Helm release
-HELM_NAMESPACE ?= k8s-operator-system
+HELM_NAMESPACE ?= polars-k8s-operator-system
 ## Name of the Helm release
-HELM_RELEASE ?= k8s-operator
+HELM_RELEASE ?= polars-k8s-operator
 ## Path to the Helm chart directory
-HELM_CHART_DIR ?= dist/chart
+HELM_CHART_DIR ?= $(CHART_BUILD_DIR)
 ## Additional arguments to pass to helm commands
 HELM_EXTRA_ARGS ?=
+
+IMG_TAG = $(lastword $(subst :, ,$(IMG)))
+IMG_REPOSITORY = $(patsubst %:$(IMG_TAG),%,$(IMG))
 
 .PHONY: install-helm
 install-helm: ## Install the latest version of Helm.
@@ -316,12 +337,12 @@ install-helm: ## Install the latest version of Helm.
 	}
 
 .PHONY: helm-deploy
-helm-deploy: install-helm ## Deploy manager to the K8s cluster via Helm. Specify an image with IMG.
+helm-deploy: chart install-helm ## Deploy manager to the K8s cluster via Helm. Specify an image with IMG.
 	$(HELM) upgrade --install $(HELM_RELEASE) $(HELM_CHART_DIR) \
 		--namespace $(HELM_NAMESPACE) \
 		--create-namespace \
-		--set manager.image.repository=$${IMG%:*} \
-		--set manager.image.tag=$${IMG##*:} \
+		--set image.repository=$(IMG_REPOSITORY) \
+		--set image.tag=$(IMG_TAG) \
 		--wait \
 		--timeout 5m \
 		$(HELM_EXTRA_ARGS)

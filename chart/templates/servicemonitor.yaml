@@ -1,0 +1,44 @@
+{{- if .Values.serviceMonitor.enabled }}
+{{- if not .Values.metrics.enabled }}
+{{- fail "serviceMonitor.enabled requires metrics.enabled" }}
+{{- end }}
+{{- if .Values.metrics.secure }}
+{{- fail "serviceMonitor.enabled requires metrics.secure=false; for authenticated scraping, add your own ServiceMonitor through extraObjects" }}
+{{- end }}
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: {{ include "polars-k8s-operator.resourceName" (dict "suffix" "controller-manager" "context" $) }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "polars-k8s-operator.labels" . | nindent 4 }}
+    {{- with .Values.serviceMonitor.additionalLabels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/instance: {{ .Release.Name }}
+      {{- include "polars-k8s-operator.selectorLabels" . | nindent 6 }}
+  namespaceSelector:
+    matchNames:
+    - {{ .Release.Namespace }}
+  endpoints:
+  - port: http
+    path: /metrics
+    honorLabels: {{ .Values.serviceMonitor.honorLabels }}
+    {{- with .Values.serviceMonitor.interval }}
+    interval: {{ . }}
+    {{- end }}
+    {{- with .Values.serviceMonitor.scrapeTimeout }}
+    scrapeTimeout: {{ . }}
+    {{- end }}
+    {{- with .Values.serviceMonitor.relabelings }}
+    relabelings:
+      {{- toYaml . | nindent 6 }}
+    {{- end }}
+    {{- with .Values.serviceMonitor.metricRelabelings }}
+    metricRelabelings:
+      {{- toYaml . | nindent 6 }}
+    {{- end }}
+{{- end }}

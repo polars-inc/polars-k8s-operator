@@ -1,0 +1,13 @@
+apiVersion: v2
+name: polars-k8s-operator
+description: Kubernetes operator for managing Polars Clusters
+type: application
+
+# Stamped from the release tag by .github/workflows/release.yml.
+version: 0.0.0
+appVersion: "0.0.0"
+
+keywords:
+  - kubernetes
+  - operator
+  - polars
