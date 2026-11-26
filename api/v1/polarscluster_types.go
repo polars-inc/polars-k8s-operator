@@ -220,30 +220,9 @@ type LicenseOnPremEnterpriseSpec struct {
 	SecretProperty string `json:"secretProperty"`
 }
 
-// LicenseCloudSpec reads the cloud license's mTLS certificate from a
-// Secret.
-type LicenseCloudSpec struct {
-	// SecretName is the name of a Secret, in the same namespace, containing
-	// keys tls.crt, tls.key, and ca.crt.
-	SecretName string `json:"secretName"`
-
-	// RegisterNode advertises this node's address to the control plane.
-	// +optional
-	RegisterNode *RegisterNodeSpec `json:"registerNode,omitempty"`
-}
-
-// RegisterNodeSpec is where a node tells the control plane it can be reached.
-type RegisterNodeSpec struct {
-	// PrivateAddress is the address reachable from inside the deployment,
-	// commonly a field reference to status.podIP or status.hostIP.
-	PrivateAddress ValueOrSource `json:"privateAddress"`
-
-	// PublicAddress is the address reachable from outside it. Leaving it
-	// unset withholds the node's address from the control plane, which
-	// rejects that for an interactive cluster.
-	// +optional
-	PublicAddress *ValueOrSource `json:"publicAddress,omitempty"`
-}
+// LicenseCloudSpec marks a cluster licensed by Polars Cloud, which configures
+// the license through the pod templates. The operator adds nothing for it.
+type LicenseCloudSpec struct{}
 
 // TelemetrySpec configures exporting the cluster's telemetry.
 type TelemetrySpec struct {

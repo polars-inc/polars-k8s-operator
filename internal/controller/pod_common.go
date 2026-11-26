@@ -30,9 +30,6 @@ const (
 	enterpriseLicenseMountDir = "/mnt/license/"
 	enterpriseLicensePath     = "/mnt/license/license.json"
 
-	cloudLicenseVolume   = "cloud-license"
-	cloudLicenseMountDir = "/mnt/cloud_license/"
-
 	defaultHeartBeatInterval = "5s"
 	defaultCheckpointPeriod  = "20m"
 	defaultMetricsBytesTotal = int64(104857600)
@@ -91,10 +88,6 @@ var minAutoscalingVersion = utilversion.MustParseSemantic("0.8.4")
 // 0.9.0 moved cluster_mode from [observatory] to the top level. Newer
 // releases silently ignore the old key and fall back to bare metal.
 var minTopLevelClusterModeVersion = utilversion.MustParseSemantic("0.9.0")
-
-// 0.11.0 dropped [license.cloud] cert_dir and rejects it; older releases read
-// the server certificate from it to register nodes.
-var minCertlessCloudLicenseVersion = utilversion.MustParseSemantic("0.11.0")
 
 // 0.9.0 is the first release whose Polars reads POLARS_OOMKILL_THRESHOLD_MB;
 // older releases ignore it.
@@ -290,47 +283,6 @@ func enterpriseLicenseConfig(cluster *computev1.PolarsCluster) ([]corev1.Volume,
 		},
 	}}
 	mounts := []corev1.VolumeMount{{Name: enterpriseLicenseVolume, MountPath: enterpriseLicenseMountDir}}
-	return volumes, mounts
-}
-
-func cloudLicenseEnv(license *envBuilder, registerNode *computev1.RegisterNodeSpec) {
-	cloud := license.Section("cloud")
-	cloud.Bool("notify_query_submitted", true)
-	cloud.Bool("enable_query_polling", false)
-
-	if registerNode == nil {
-		return
-	}
-	register := cloud.Section("register_node")
-	register.ValueOrSource("private_address", registerNode.PrivateAddress)
-	if registerNode.PublicAddress != nil {
-		register.ValueOrSource("public_address", *registerNode.PublicAddress)
-	}
-}
-
-// cloudLicenseConfig returns the Secret volume + mount for the cloud
-// license's mTLS certificate, remapping the Secret's standard TLS keys to
-// the filenames pc-cublet expects inside cert_dir.
-func cloudLicenseConfig(cluster *computev1.PolarsCluster) ([]corev1.Volume, []corev1.VolumeMount) {
-	cloud := cluster.Spec.License.Cloud
-	if cloud == nil {
-		return nil, nil
-	}
-
-	volumes := []corev1.Volume{{
-		Name: cloudLicenseVolume,
-		VolumeSource: corev1.VolumeSource{
-			Secret: &corev1.SecretVolumeSource{
-				SecretName: cloud.SecretName,
-				Items: []corev1.KeyToPath{
-					{Key: "tls.crt", Path: "certificate.pem"},
-					{Key: "tls.key", Path: "private_key.pem"},
-					{Key: "ca.crt", Path: "ca_cert.pem"},
-				},
-			},
-		},
-	}}
-	mounts := []corev1.VolumeMount{{Name: cloudLicenseVolume, MountPath: cloudLicenseMountDir}}
 	return volumes, mounts
 }
 
