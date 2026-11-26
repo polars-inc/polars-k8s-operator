@@ -92,6 +92,10 @@ var minAutoscalingVersion = utilversion.MustParseSemantic("0.8.4")
 // releases silently ignore the old key and fall back to bare metal.
 var minTopLevelClusterModeVersion = utilversion.MustParseSemantic("0.9.0")
 
+// 0.11.0 dropped [license.cloud] cert_dir and rejects it; older releases read
+// the server certificate from it to register nodes.
+var minCertlessCloudLicenseVersion = utilversion.MustParseSemantic("0.11.0")
+
 // 0.9.0 is the first release whose Polars reads POLARS_OOMKILL_THRESHOLD_MB;
 // older releases ignore it.
 var minOOMKillThresholdVersion = utilversion.MustParseSemantic("0.9.0")
@@ -291,7 +295,6 @@ func enterpriseLicenseConfig(cluster *computev1.PolarsCluster) ([]corev1.Volume,
 
 func cloudLicenseEnv(license *envBuilder, registerNode *computev1.RegisterNodeSpec) {
 	cloud := license.Section("cloud")
-	cloud.String("cert_dir", cloudLicenseMountDir)
 	cloud.Bool("notify_query_submitted", true)
 	cloud.Bool("enable_query_polling", false)
 

@@ -212,6 +212,10 @@ func schedulerLicenseConfig(cublet *envBuilder, cluster *computev1.PolarsCluster
 
 	case licenseSpec.Cloud != nil:
 		cloudLicenseEnv(license, licenseSpec.Cloud.RegisterNode)
+		if versionAtLeast(cluster, minCertlessCloudLicenseVersion) {
+			return nil, nil
+		}
+		license.Section("cloud").String("cert_dir", cloudLicenseMountDir)
 		return cloudLicenseConfig(cluster)
 	}
 
