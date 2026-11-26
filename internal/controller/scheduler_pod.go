@@ -209,14 +209,6 @@ func schedulerLicenseConfig(cublet *envBuilder, cluster *computev1.PolarsCluster
 	case licenseSpec.OnPremEnterprise != nil:
 		license.Section("on_prem_enterprise").String("license_path", enterpriseLicensePath)
 		return enterpriseLicenseConfig(cluster)
-
-	case licenseSpec.Cloud != nil:
-		cloudLicenseEnv(license, licenseSpec.Cloud.RegisterNode)
-		if versionAtLeast(cluster, minCertlessCloudLicenseVersion) {
-			return nil, nil
-		}
-		license.Section("cloud").String("cert_dir", cloudLicenseMountDir)
-		return cloudLicenseConfig(cluster)
 	}
 
 	return nil, nil

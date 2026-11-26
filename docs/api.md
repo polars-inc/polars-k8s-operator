@@ -323,18 +323,14 @@ _Appears in:_
 
 
 
-LicenseCloudSpec reads the cloud license's mTLS certificate from a
-Secret.
+LicenseCloudSpec marks a cluster licensed by Polars Cloud, which configures
+the license through the pod templates. The operator adds nothing for it.
 
 
 
 _Appears in:_
 - [LicenseSpec](#licensespec)
 
-| Field | Description | Default | Validation |
-| --- | --- | --- | --- |
-| `secretName` _string_ | SecretName is the name of a Secret, in the same namespace, containing<br />keys tls.crt, tls.key, and ca.crt. |  |  |
-| `registerNode` _[RegisterNodeSpec](#registernodespec)_ | RegisterNode advertises this node's address to the control plane. |  | Optional: \{\} <br /> |
 
 
 #### LicenseOnPremEnterpriseSpec
@@ -626,23 +622,6 @@ _Appears in:_
 
 
 
-#### RegisterNodeSpec
-
-
-
-RegisterNodeSpec is where a node tells the control plane it can be reached.
-
-
-
-_Appears in:_
-- [LicenseCloudSpec](#licensecloudspec)
-
-| Field | Description | Default | Validation |
-| --- | --- | --- | --- |
-| `privateAddress` _[ValueOrSource](#valueorsource)_ | PrivateAddress is the address reachable from inside the deployment,<br />commonly a field reference to status.podIP or status.hostIP. |  | ExactlyOneOf: [value valueFrom] <br /> |
-| `publicAddress` _[ValueOrSource](#valueorsource)_ | PublicAddress is the address reachable from outside it. Leaving it<br />unset withholds the node's address from the control plane, which<br />rejects that for an interactive cluster. |  | ExactlyOneOf: [value valueFrom] <br />Optional: \{\} <br /> |
-
-
 #### RouteSpec
 
 
@@ -908,7 +887,6 @@ _Validation:_
 
 _Appears in:_
 - [LicenseOnPremSpec](#licenseonpremspec)
-- [RegisterNodeSpec](#registernodespec)
 - [TelemetrySpec](#telemetryspec)
 
 | Field | Description | Default | Validation |
