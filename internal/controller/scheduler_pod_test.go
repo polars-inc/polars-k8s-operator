@@ -533,6 +533,7 @@ func TestBuildSchedulerPodTemplate_CloudLicense(t *testing.T) {
 	g := NewWithT(t)
 
 	cluster := schedulerCluster(corev1.Container{})
+	cluster.Spec.Version = "0.10.2"
 	cluster.Spec.License.Cloud = &computev1.LicenseCloudSpec{SecretName: testCloudSecretName}
 
 	result, err := BuildSchedulerPodTemplate(cluster)
