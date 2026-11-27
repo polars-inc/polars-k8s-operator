@@ -71,7 +71,7 @@ func TestBuildWorkerPodTemplate_DefaultShuffleData(t *testing.T) {
 
 	worker := result.Spec.Containers[0]
 
-	localPath, ok := findEnv(worker.Env, "PC_CUBLET__worker__shuffle_location__local__path")
+	localPath, ok := findEnv(worker.Env, "NANOOK__worker__shuffle_location__local__path")
 	g.Expect(ok).To(BeTrue())
 	g.Expect(localPath.Value).To(Equal(shuffleDataMountPath + "/shuffle_data"))
 
@@ -180,11 +180,11 @@ func TestBuildWorkerPodTemplate_ShuffleDataS3Options(t *testing.T) {
 
 	env := result.Spec.Containers[0].Env
 
-	url, ok := findEnv(env, "PC_CUBLET__worker__shuffle_location__s3__url")
+	url, ok := findEnv(env, "NANOOK__worker__shuffle_location__s3__url")
 	g.Expect(ok).To(BeTrue())
 	g.Expect(url.Value).To(Equal("s3://example-bucket/shuffle"))
 
-	region, ok := findEnv(env, "PC_CUBLET__worker__shuffle_location__s3__region")
+	region, ok := findEnv(env, "NANOOK__worker__shuffle_location__s3__region")
 	g.Expect(ok).To(BeTrue())
 	g.Expect(region.Value).To(Equal(testOptionRegionValue))
 
@@ -212,11 +212,11 @@ func TestBuildWorkerPodTemplate_CheckpointDataS3(t *testing.T) {
 
 	env := result.Spec.Containers[0].Env
 
-	url, ok := findEnv(env, "PC_CUBLET__worker__checkpoint_location__s3__url")
+	url, ok := findEnv(env, "NANOOK__worker__checkpoint_location__s3__url")
 	g.Expect(ok).To(BeTrue())
 	g.Expect(url.Value).To(Equal("s3://example-bucket/checkpoints"))
 
-	region, ok := findEnv(env, "PC_CUBLET__worker__checkpoint_location__s3__region")
+	region, ok := findEnv(env, "NANOOK__worker__checkpoint_location__s3__region")
 	g.Expect(ok).To(BeTrue())
 	g.Expect(region.Value).To(Equal("us-west-2"))
 }
@@ -253,7 +253,7 @@ func TestBuildWorkerPodTemplate_HeartBeatInterval(t *testing.T) {
 	result, err := BuildWorkerPodTemplate(cluster)
 	g.Expect(err).NotTo(HaveOccurred())
 
-	heartbeat, ok := findEnv(result.Spec.Containers[0].Env, "PC_CUBLET__worker__heartbeat_period")
+	heartbeat, ok := findEnv(result.Spec.Containers[0].Env, "NANOOK__worker__heartbeat_period")
 	g.Expect(ok).To(BeTrue())
 	g.Expect(heartbeat.Value).To(Equal("30s"))
 }
@@ -266,9 +266,9 @@ func TestBuildWorkerPodTemplate_Extras(t *testing.T) {
 	g.Expect(err).NotTo(HaveOccurred())
 
 	env := result.Spec.Containers[0].Env
-	_, ok := findEnv(env, "PC_CUBLET__worker__extras__hdfs__enabled")
+	_, ok := findEnv(env, "NANOOK__worker__extras__hdfs__enabled")
 	g.Expect(ok).To(BeFalse())
-	_, ok = findEnv(env, "PC_CUBLET__worker__extras__pyiceberg__enabled")
+	_, ok = findEnv(env, "NANOOK__worker__extras__pyiceberg__enabled")
 	g.Expect(ok).To(BeFalse())
 
 	cluster.Spec.WorkerPool.Extras = computev1.ExtrasSpec{
@@ -280,11 +280,11 @@ func TestBuildWorkerPodTemplate_Extras(t *testing.T) {
 
 	env = result.Spec.Containers[0].Env
 
-	hdfs, ok := findEnv(env, "PC_CUBLET__worker__extras__hdfs__enabled")
+	hdfs, ok := findEnv(env, "NANOOK__worker__extras__hdfs__enabled")
 	g.Expect(ok).To(BeTrue())
 	g.Expect(hdfs.Value).To(Equal(envValueTrue))
 
-	pyIceberg, ok := findEnv(env, "PC_CUBLET__worker__extras__pyiceberg__enabled")
+	pyIceberg, ok := findEnv(env, "NANOOK__worker__extras__pyiceberg__enabled")
 	g.Expect(ok).To(BeTrue())
 	g.Expect(pyIceberg.Value).To(Equal(envValueTrue))
 }
@@ -295,14 +295,14 @@ func TestBuildWorkerPodTemplate_HostMetricsDisabled(t *testing.T) {
 	cluster := polarsCluster(corev1.Container{})
 	result, err := BuildWorkerPodTemplate(cluster)
 	g.Expect(err).NotTo(HaveOccurred())
-	_, ok := findEnv(result.Spec.Containers[0].Env, "PC_CUBLET__monitoring__host_metrics__enabled")
+	_, ok := findEnv(result.Spec.Containers[0].Env, "NANOOK__monitoring__host_metrics__enabled")
 	g.Expect(ok).To(BeFalse())
 
 	cluster.Spec.HostMetrics = &computev1.HostMetricsSpec{Enabled: false}
 	result, err = BuildWorkerPodTemplate(cluster)
 	g.Expect(err).NotTo(HaveOccurred())
 
-	hostMetrics, ok := findEnv(result.Spec.Containers[0].Env, "PC_CUBLET__monitoring__host_metrics__enabled")
+	hostMetrics, ok := findEnv(result.Spec.Containers[0].Env, "NANOOK__monitoring__host_metrics__enabled")
 	g.Expect(ok).To(BeTrue())
 	g.Expect(hostMetrics.Value).To(Equal("false"))
 }
@@ -343,8 +343,8 @@ func TestBuildWorkerPodTemplate_DiscoveryHostnames(t *testing.T) {
 
 			env := result.Spec.Containers[0].Env
 			for _, key := range []string{
-				"PC_CUBLET__static_leader__scheduler_service__public_addr__hostname",
-				"PC_CUBLET__static_leader__observatory_service__public_addr__hostname",
+				"NANOOK__static_leader__scheduler_service__public_addr__hostname",
+				"NANOOK__static_leader__observatory_service__public_addr__hostname",
 			} {
 				got, ok := findEnv(env, key)
 				g.Expect(ok).To(BeTrue())
@@ -359,7 +359,7 @@ func TestBuildWorkerPodTemplate_CpuReserved(t *testing.T) {
 
 	result, err := BuildWorkerPodTemplate(polarsCluster(corev1.Container{}))
 	g.Expect(err).NotTo(HaveOccurred())
-	_, ok := findEnv(result.Spec.Containers[0].Env, "PC_CUBLET__cpu_reserved")
+	_, ok := findEnv(result.Spec.Containers[0].Env, "NANOOK__cpu_reserved")
 	g.Expect(ok).To(BeFalse())
 
 	cluster := polarsCluster(corev1.Container{
@@ -370,7 +370,7 @@ func TestBuildWorkerPodTemplate_CpuReserved(t *testing.T) {
 	result, err = BuildWorkerPodTemplate(cluster)
 	g.Expect(err).NotTo(HaveOccurred())
 
-	cpuReserved, ok := findEnv(result.Spec.Containers[0].Env, "PC_CUBLET__cpu_reserved")
+	cpuReserved, ok := findEnv(result.Spec.Containers[0].Env, "NANOOK__cpu_reserved")
 	g.Expect(ok).To(BeTrue())
 	g.Expect(cpuReserved.Value).To(Equal("1500m"))
 }
@@ -381,7 +381,7 @@ func TestBuildWorkerPodTemplate_DefaultHeartBeat(t *testing.T) {
 	result, err := BuildWorkerPodTemplate(polarsCluster(corev1.Container{}))
 	g.Expect(err).NotTo(HaveOccurred())
 
-	heartbeat, ok := findEnv(result.Spec.Containers[0].Env, "PC_CUBLET__worker__heartbeat_period")
+	heartbeat, ok := findEnv(result.Spec.Containers[0].Env, "NANOOK__worker__heartbeat_period")
 	g.Expect(ok).To(BeTrue())
 	g.Expect(heartbeat.Value).To(Equal("5s"))
 }
@@ -399,7 +399,7 @@ func TestBuildWorkerPodTemplate_LocalPathShuffle(t *testing.T) {
 
 	worker := result.Spec.Containers[0]
 
-	path, ok := findEnv(worker.Env, "PC_CUBLET__worker__shuffle_location__local__path")
+	path, ok := findEnv(worker.Env, "NANOOK__worker__shuffle_location__local__path")
 	g.Expect(ok).To(BeTrue())
 	g.Expect(path.Value).To(Equal("/mnt/fast-ssd/shuffle"))
 
@@ -422,7 +422,7 @@ func TestBuildWorkerPodTemplate_SharedFilesystemShuffle(t *testing.T) {
 	result, err := BuildWorkerPodTemplate(cluster)
 	g.Expect(err).NotTo(HaveOccurred())
 
-	path, ok := findEnv(result.Spec.Containers[0].Env, "PC_CUBLET__worker__shuffle_location__shared_filesystem__path")
+	path, ok := findEnv(result.Spec.Containers[0].Env, "NANOOK__worker__shuffle_location__shared_filesystem__path")
 	g.Expect(ok).To(BeTrue())
 	g.Expect(path.Value).To(Equal("/mnt/nfs/shuffle"))
 

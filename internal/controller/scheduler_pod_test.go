@@ -79,16 +79,16 @@ func TestBuildSchedulerPodTemplate_LicenseOnPrem(t *testing.T) {
 
 	scheduler := result.Spec.Containers[0]
 
-	clientID, ok := findEnv(scheduler.Env, "PC_CUBLET__license__on_prem__client_id")
+	clientID, ok := findEnv(scheduler.Env, "NANOOK__license__on_prem__client_id")
 	g.Expect(ok).To(BeTrue())
 	g.Expect(clientID.ValueFrom.SecretKeyRef.Key).To(Equal(testClientIDKey))
 
-	clientSecret, ok := findEnv(scheduler.Env, "PC_CUBLET__license__on_prem__client_secret")
+	clientSecret, ok := findEnv(scheduler.Env, "NANOOK__license__on_prem__client_secret")
 	g.Expect(ok).To(BeTrue())
 	g.Expect(clientSecret.Value).To(Equal("literal-secret"))
 	g.Expect(clientSecret.ValueFrom).To(BeNil())
 
-	certDir, ok := findEnv(scheduler.Env, "PC_CUBLET__license__on_prem__cert_dir")
+	certDir, ok := findEnv(scheduler.Env, "NANOOK__license__on_prem__cert_dir")
 	g.Expect(ok).To(BeTrue())
 	g.Expect(certDir.Value).To(Equal(licenseDataMountPath))
 
@@ -190,17 +190,17 @@ func TestBuildSchedulerPodTemplate_AnonymousResultsS3Options(t *testing.T) {
 
 	env := result.Spec.Containers[0].Env
 
-	url, ok := findEnv(env, "PC_CUBLET__scheduler__anonymous_result_location__s3__url")
+	url, ok := findEnv(env, "NANOOK__scheduler__anonymous_result_location__s3__url")
 	g.Expect(ok).To(BeTrue())
 	g.Expect(url.Value).To(Equal("s3://example-bucket/results"))
 
-	region, ok := findEnv(env, "PC_CUBLET__scheduler__anonymous_result_location__s3__region")
+	region, ok := findEnv(env, "NANOOK__scheduler__anonymous_result_location__s3__region")
 	g.Expect(ok).To(BeTrue())
 	g.Expect(region.Value).To(Equal(testOptionRegionValue))
 
 	count := 0
 	for _, e := range env {
-		if e.Name == "PC_CUBLET__scheduler__anonymous_result_location__s3__url" {
+		if e.Name == "NANOOK__scheduler__anonymous_result_location__s3__url" {
 			count++
 		}
 	}
@@ -403,7 +403,7 @@ func TestBuildSchedulerPodTemplate_ClusterIDAndEULA(t *testing.T) {
 
 	env := result.Spec.Containers[0].Env
 
-	clusterID, ok := findEnv(env, "PC_CUBLET__cluster_id")
+	clusterID, ok := findEnv(env, "NANOOK__cluster_id")
 	g.Expect(ok).To(BeTrue())
 	g.Expect(clusterID.Value).To(Equal("polars/analytics"))
 
@@ -414,7 +414,7 @@ func TestBuildSchedulerPodTemplate_ClusterIDAndEULA(t *testing.T) {
 	cluster.Spec.ClusterID = "custom-id"
 	result, err = BuildSchedulerPodTemplate(cluster)
 	g.Expect(err).NotTo(HaveOccurred())
-	clusterID, _ = findEnv(result.Spec.Containers[0].Env, "PC_CUBLET__cluster_id")
+	clusterID, _ = findEnv(result.Spec.Containers[0].Env, "NANOOK__cluster_id")
 	g.Expect(clusterID.Value).To(Equal("custom-id"))
 }
 
@@ -425,7 +425,7 @@ func TestBuildSchedulerPodTemplate_CheckpointEnabledByCheckpointData(t *testing.
 
 	result, err := BuildSchedulerPodTemplate(cluster)
 	g.Expect(err).NotTo(HaveOccurred())
-	_, ok := findEnv(result.Spec.Containers[0].Env, "PC_CUBLET__scheduler__checkpoint__enabled")
+	_, ok := findEnv(result.Spec.Containers[0].Env, "NANOOK__scheduler__checkpoint__enabled")
 	g.Expect(ok).To(BeFalse())
 
 	cluster.Spec.Checkpoint = &computev1.CheckpointSpec{
@@ -437,11 +437,11 @@ func TestBuildSchedulerPodTemplate_CheckpointEnabledByCheckpointData(t *testing.
 	g.Expect(err).NotTo(HaveOccurred())
 
 	env := result.Spec.Containers[0].Env
-	enabled, ok := findEnv(env, "PC_CUBLET__scheduler__checkpoint__enabled")
+	enabled, ok := findEnv(env, "NANOOK__scheduler__checkpoint__enabled")
 	g.Expect(ok).To(BeTrue())
 	g.Expect(enabled.Value).To(Equal(envValueTrue))
 
-	period, ok := findEnv(env, "PC_CUBLET__scheduler__checkpoint__period")
+	period, ok := findEnv(env, "NANOOK__scheduler__checkpoint__period")
 	g.Expect(ok).To(BeTrue())
 	g.Expect(period.Value).To(Equal("20m"))
 }
@@ -513,7 +513,7 @@ func TestBuildSchedulerPodTemplate_EnterpriseLicense(t *testing.T) {
 
 	scheduler := result.Spec.Containers[0]
 
-	path, ok := findEnv(scheduler.Env, "PC_CUBLET__license__on_prem_enterprise__license_path")
+	path, ok := findEnv(scheduler.Env, "NANOOK__license__on_prem_enterprise__license_path")
 	g.Expect(ok).To(BeTrue())
 	g.Expect(path.Value).To(Equal("/mnt/license/license.json"))
 
@@ -537,14 +537,14 @@ func TestBuildSchedulerPodTemplate_NWorkersMatchesReplicas(t *testing.T) {
 	result, err := BuildSchedulerPodTemplate(cluster)
 	g.Expect(err).NotTo(HaveOccurred())
 
-	nWorkers, ok := findEnv(result.Spec.Containers[0].Env, "PC_CUBLET__scheduler__n_workers")
+	nWorkers, ok := findEnv(result.Spec.Containers[0].Env, "NANOOK__scheduler__n_workers")
 	g.Expect(ok).To(BeTrue())
 	g.Expect(nWorkers.Value).To(Equal("4"))
 
 	cluster.Spec.WorkerPool.Replicas = 0
 	result, err = BuildSchedulerPodTemplate(cluster)
 	g.Expect(err).NotTo(HaveOccurred())
-	_, ok = findEnv(result.Spec.Containers[0].Env, "PC_CUBLET__scheduler__n_workers")
+	_, ok = findEnv(result.Spec.Containers[0].Env, "NANOOK__scheduler__n_workers")
 	g.Expect(ok).To(BeFalse(), "cublet rejects n_workers=0")
 }
 
@@ -561,16 +561,16 @@ func TestBuildSchedulerPodTemplate_Autoscaling(t *testing.T) {
 
 	env := result.Spec.Containers[0].Env
 	for name, value := range map[string]string{
-		"PC_CUBLET__scaling__kubernetes__name":            testClusterName,
-		"PC_CUBLET__scaling__kubernetes__namespace":       testClusterNamespace,
-		"PC_CUBLET__scheduler__default_workers_per_query": "2",
-		"PC_CUBLET__scheduler__max_workers_per_query":     "8",
+		"NANOOK__scaling__kubernetes__name":            testClusterName,
+		"NANOOK__scaling__kubernetes__namespace":       testClusterNamespace,
+		"NANOOK__scheduler__default_workers_per_query": "2",
+		"NANOOK__scheduler__max_workers_per_query":     "8",
 	} {
 		e, ok := findEnv(env, name)
 		g.Expect(ok).To(BeTrue(), name)
 		g.Expect(e.Value).To(Equal(value), name)
 	}
-	_, ok := findEnv(env, "PC_CUBLET__scheduler__n_workers")
+	_, ok := findEnv(env, "NANOOK__scheduler__n_workers")
 	g.Expect(ok).To(BeFalse(), "n_workers would restart the scheduler on every scale")
 	g.Expect(result.Spec.ServiceAccountName).To(Equal(testClusterName+"-scheduler"),
 		"an autoscaling scheduler gets its own ServiceAccount")
@@ -604,29 +604,25 @@ func TestBuildSchedulerPodTemplate_HostMetricsDisabled(t *testing.T) {
 	cluster := schedulerCluster(corev1.Container{})
 	result, err := BuildSchedulerPodTemplate(cluster)
 	g.Expect(err).NotTo(HaveOccurred())
-	_, ok := findEnv(result.Spec.Containers[0].Env, "PC_CUBLET__monitoring__host_metrics__enabled")
+	_, ok := findEnv(result.Spec.Containers[0].Env, "NANOOK__monitoring__host_metrics__enabled")
 	g.Expect(ok).To(BeFalse())
 
 	cluster.Spec.HostMetrics = &computev1.HostMetricsSpec{Enabled: false}
 	result, err = BuildSchedulerPodTemplate(cluster)
 	g.Expect(err).NotTo(HaveOccurred())
 
-	hostMetrics, ok := findEnv(result.Spec.Containers[0].Env, "PC_CUBLET__monitoring__host_metrics__enabled")
+	hostMetrics, ok := findEnv(result.Spec.Containers[0].Env, "NANOOK__monitoring__host_metrics__enabled")
 	g.Expect(ok).To(BeTrue())
 	g.Expect(hostMetrics.Value).To(Equal("false"))
 }
 
 func TestBuildSchedulerPodTemplate_ClusterModeKeyByVersion(t *testing.T) {
-	const (
-		topLevel    = "PC_CUBLET__cluster_mode"
-		observatory = "PC_CUBLET__observatory__cluster_mode"
-	)
 	for _, tc := range []struct {
 		version, want, absent string
 	}{
-		{version: testPre090Version, want: observatory, absent: topLevel},
-		{version: "0.9.0", want: topLevel, absent: observatory},
-		{version: computev1.LatestVersion, want: topLevel, absent: observatory},
+		{version: testPre090Version, want: "PC_CUBLET__observatory__cluster_mode", absent: "PC_CUBLET__cluster_mode"},
+		{version: "0.9.0", want: "PC_CUBLET__cluster_mode", absent: "PC_CUBLET__observatory__cluster_mode"},
+		{version: computev1.LatestVersion, want: "NANOOK__cluster_mode", absent: "NANOOK__observatory__cluster_mode"},
 	} {
 		t.Run(tc.version, func(t *testing.T) {
 			g := NewWithT(t)
