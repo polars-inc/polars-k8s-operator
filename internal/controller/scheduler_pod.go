@@ -63,7 +63,7 @@ func computedSchedulerPodSpec(cluster *computev1.PolarsCluster, containerName st
 	b := newEnvBuilder()
 	b.String("RUST_BACKTRACE", "full")
 
-	cublet := b.Section("PC_CUBLET")
+	cublet := b.Section(cubletEnvPrefix(cluster))
 	scheduler := cublet.Section("scheduler")
 	staticLeader := cublet.Section("static_leader")
 	observatory := cublet.Section("observatory")

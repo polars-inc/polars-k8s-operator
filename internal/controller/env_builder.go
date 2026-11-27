@@ -10,7 +10,7 @@ import (
 )
 
 // envBuilder accumulates corev1.EnvVar entries under a "__"-joined name, so
-// deeply nested keys like "PC_CUBLET__scheduler__checkpoint__period" are
+// deeply nested keys like "NANOOK__scheduler__checkpoint__period" are
 // built by chaining Section calls instead of hand-typing the full string.
 // All builders derived from the same root (via Section) share one
 // underlying, order-preserving slice.

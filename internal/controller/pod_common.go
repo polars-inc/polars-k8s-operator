@@ -93,6 +93,15 @@ var minTopLevelClusterModeVersion = utilversion.MustParseSemantic("0.9.0")
 // older releases ignore it.
 var minOOMKillThresholdVersion = utilversion.MustParseSemantic("0.9.0")
 
+var minNanookEnvPrefixVersion = utilversion.MustParseSemantic("0.10.0")
+
+func cubletEnvPrefix(cluster *computev1.PolarsCluster) string {
+	if versionAtLeast(cluster, minNanookEnvPrefixVersion) {
+		return "NANOOK"
+	}
+	return "PC_CUBLET"
+}
+
 // parseClusterVersion parses spec.version, returning nil when it is unset or
 // "latest".
 func parseClusterVersion(cluster *computev1.PolarsCluster) (*utilversion.Version, error) {

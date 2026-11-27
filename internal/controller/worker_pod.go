@@ -73,7 +73,7 @@ func computedWorkerPodSpec(cluster *computev1.PolarsCluster, containerName strin
 	b := newEnvBuilder()
 	b.String("RUST_BACKTRACE", "full")
 
-	cublet := b.Section("PC_CUBLET")
+	cublet := b.Section(cubletEnvPrefix(cluster))
 	monitoring := cublet.Section("monitoring")
 	worker := cublet.Section("worker")
 	staticLeader := cublet.Section("static_leader")
